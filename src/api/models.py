@@ -71,26 +71,24 @@ class CryptoCurrency(db.Model):
     __tablename__ = 'cryptos'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
-    symbol = db.Column(db.String(10), unique=True, nullable=False)
     price = db.Column(db.Float, nullable=False)
 
     favorites = db.relationship("Favorite", back_populates="crypto")
 
     def serialize(self):
-        return {"id": self.id, "name": self.name, "symbol": self.symbol, "price": self.price, "category": "crypto"}
+        return {"id": self.id, "name": self.name, "price": self.price, "category": "crypto"}
 
 class Stock(db.Model):
     __tablename__ = 'stocks'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
-    ticker = db.Column(db.String(10), unique=True, nullable=False)
     price = db.Column(db.Float, nullable=False)
 
     favorites = db.relationship("Favorite", back_populates="stock")
 
     def serialize(self):
-        return {"id": self.id, "name": self.name, "ticker": self.ticker, "price": self.price, "category": "stock"}
 
+        return {"id": self.id, "name": self.name, "price": self.price, "category": "stock"}
 
 # FAVORITOS
 
@@ -135,10 +133,6 @@ class Favorite(db.Model):
             "user_id": self.user_id,
             "item": active_item
         }
-
-
-# NOTICIAS
-
 
 class News(db.Model):
     __tablename__ = 'news'
