@@ -2,7 +2,7 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 from flask import Flask, request, jsonify, url_for, Blueprint
-from api.models import db, User, Fund, ETF, CryptoCurrency, Stock, Favorite, News
+from api.models import db, User, Favorite
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 import os
@@ -93,161 +93,13 @@ def login():
 def get_profile(current_user):
     return jsonify(current_user.serialize()), 200
 
-
-# FONDOS
-
-
-@api.route('/fund', methods=['GET']) 
-def get_funds():
-    funds = Fund.query.all()
-    return jsonify([f.serialize() for f in funds]), 200
-
-@api.route('/fund/<int:fund_id>', methods=['GET']) 
-def get_fund(fund_id):
-    fund = Fund.query.get(fund_id)
-    if not fund:
-        return jsonify({"error": "Fund not found"}), 404
-    return jsonify(fund.serialize()), 200
-
-@api.route('/fund', methods=['POST'])
-def create_fund():
-    data = request.get_json()
-    if not data or 'name' not in data or 'price' not in data:
-        return jsonify({"error": "Missing name or price"}), 400
-    fund = Fund(name=data['name'], price=data['price'])
-    db.session.add(fund)
-    db.session.commit()
-    return jsonify(fund.serialize()), 201
-
-@api.route('/fund/<int:fund_id>', methods=['DELETE']) 
-def delete_fund(fund_id):
-    fund = Fund.query.get(fund_id)
-    if not fund:
-        return jsonify({"error": "Fund not found"}), 404
-    db.session.delete(fund)
-    db.session.commit()
-    return jsonify({"message": "Fund deleted"}), 200
-
-
-
-# ETF
-
-
-@api.route('/etf', methods=['GET']) 
-def get_etfs():
-    etfs = ETF.query.all()
-    return jsonify([e.serialize() for e in etfs]), 200
-
-@api.route('/etf/<int:etf_id>', methods=['GET']) 
-def get_etf(etf_id):
-    etf = ETF.query.get(etf_id)
-    if not etf:
-        return jsonify({"error": "ETF not found"}), 404
-    return jsonify(etf.serialize()), 200
-
-@api.route('/etf', methods=['POST'])
-def create_etf():
-    data = request.get_json()
-    if not data or 'name' not in data or 'price' not in data:
-        return jsonify({"error": "Missing name or price"}), 400
-    etf = ETF(name=data['name'], price=data['price'])
-    db.session.add(etf)
-    db.session.commit()
-    return jsonify(etf.serialize()), 201
-
-@api.route('/etf/<int:etf_id>', methods=['DELETE']) 
-def delete_etf(etf_id):
-    etf = ETF.query.get(etf_id)
-    if not etf:
-        return jsonify({"error": "ETF not found"}), 404
-    db.session.delete(etf)
-    db.session.commit()
-    return jsonify({"message": "ETF deleted"}), 200
-
-
-
-# CRIPTOMONEDAS
-
-
-@api.route('/cryptocurrency', methods=['GET'])
-def get_cryptos():
-    cryptos = CryptoCurrency.query.all()
-    return jsonify([c.serialize() for c in cryptos]), 200
-
-@api.route('/cryptocurrency/<int:crypto_id>', methods=['GET'])
-def get_crypto(crypto_id):
-    crypto = CryptoCurrency.query.get(crypto_id)
-    if not crypto:
-        return jsonify({"error": "Crypto not found"}), 404
-    return jsonify(crypto.serialize()), 200
-
-@api.route('/cryptocurrency', methods=['POST'])
-def create_crypto():
-    data = request.get_json()
-    if not data or 'name' not in data or 'price' not in data:
-        return jsonify({"error": "Missing name or price"}), 400
-        
-    crypto = CryptoCurrency(name=data['name'], price=data['price'])
-    db.session.add(crypto)
-    db.session.commit()
-    return jsonify(crypto.serialize()), 201
-
-@api.route('/cryptocurrency/<int:crypto_id>', methods=['DELETE'])
-def delete_crypto(crypto_id):
-    crypto = CryptoCurrency.query.get(crypto_id)
-    if not crypto:
-        return jsonify({"error": "Crypto not found"}), 404
-    db.session.delete(crypto)
-    db.session.commit()
-    return jsonify({"message": "Crypto deleted"}), 200
-
-
-
-# ACCIONES 
-
-
-@api.route('/stock', methods=['GET'])
-def get_stocks():
-    stocks = Stock.query.all()
-    return jsonify([s.serialize() for s in stocks]), 200
-
-@api.route('/stock/<int:stock_id>', methods=['GET'])
-def get_stock(stock_id):
-    stock = Stock.query.get(stock_id)
-    if not stock:
-        return jsonify({"error": "Stock not found"}), 404
-    return jsonify(stock.serialize()), 200
-
-@api.route('/stock', methods=['POST'])
-def create_stock():
-    data = request.get_json()
-    if not data or 'name' not in data or 'price' not in data:
-        return jsonify({"error": "Missing name or price"}), 400
-        
-    stock = Stock(name=data['name'], price=data['price'])
-    db.session.add(stock)
-    db.session.commit()
-    return jsonify(stock.serialize()), 201
-
-@api.route('/stock/<int:stock_id>', methods=['DELETE'])
-def delete_stock(stock_id):
-    stock = Stock.query.get(stock_id)
-    if not stock:
-        return jsonify({"error": "Stock not found"}), 404
-    db.session.delete(stock)
-    db.session.commit()
-    return jsonify({"message": "Stock deleted"}), 200
-
-
-
-# FAVORITOS
-
+    # FAVORITOS 
 
 @api.route('/favorite', methods=['GET'])
 @token_required
 def get_favorites(current_user):
     favorites = Favorite.query.filter_by(user_id=current_user.id).all()
-    serialized_favorites = [fav.serialize() for fav in favorites if fav.serialize() is not None]
+    serialized_favorites = [fav.serialize() for fav in favorites]
     return jsonify(serialized_favorites), 200
 
 
@@ -256,40 +108,38 @@ def get_favorites(current_user):
 def create_favorite(current_user):
     data = request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return jsonify({"error": "No se proporcionaron datos"}), 400
 
-    fund_id = data.get('fund_id')
-    etf_id = data.get('etf_id')
-    crypto_id = data.get('crypto_id')
-    stock_id = data.get('stock_id')
+    asset_ticker = data.get('asset_ticker')
+    asset_name = data.get('asset_name')
+    asset_type = data.get('asset_type')
 
+    if not asset_ticker or not asset_name or not asset_type:
+        return jsonify({"error": "Falta el identificador (asset_ticker), el nombre (asset_name) o el tipo de activo (asset_type)"}), 400
 
-    if fund_id and not Fund.query.get(fund_id):
-        return jsonify({"error": f"El Fondo con ID {fund_id} no existe en la base de datos."}), 404
+    already_exists = Favorite.query.filter_by(
+        user_id=current_user.id,
+        asset_ticker=asset_ticker,
+        asset_type=asset_type
+    ).first()
 
-    if etf_id and not ETF.query.get(etf_id):
-        return jsonify({"error": f"El ETF con ID {etf_id} no existe en la base de datos."}), 404
-
-    if crypto_id and not CryptoCurrency.query.get(crypto_id):
-        return jsonify({"error": f"La Criptomoneda con ID {crypto_id} no existe en la base de datos."}), 404
-
-    if stock_id and not Stock.query.get(stock_id):
-        return jsonify({"error": f"La Acción con ID {stock_id} no existe en la base de datos."}), 404
+    if already_exists:
+        return jsonify({"message": "Este activo ya se encuentra en tus favoritos", "favorite": already_exists.serialize()}), 200
 
     favorite = Favorite(
         user_id=current_user.id,
-        fund_id=fund_id,
-        etf_id=etf_id,
-        crypto_id=crypto_id,
-        stock_id=stock_id
+        asset_ticker=asset_ticker,
+        asset_name=asset_name,
+        asset_type=asset_type
     )
     
     try:
         db.session.add(favorite)
         db.session.commit()
-        return jsonify({"message": "Favorite created successfully", "favorite": favorite.serialize()}), 201
+        return jsonify({"message": "Favorito creado correctamente", "favorite": favorite.serialize()}), 201
     except Exception as e:
         db.session.rollback()
+        print(f"Error al guardar favorito: {str(e)}")
         return jsonify({"error": "Error interno del servidor al guardar el favorito."}), 500
 
 
@@ -298,19 +148,17 @@ def create_favorite(current_user):
 def delete_favorite(current_user, favorite_id):
     favorite = Favorite.query.filter_by(id=favorite_id, user_id=current_user.id).first()
     if not favorite:
-        return jsonify({"error": "Favorite not found or unauthorized"}), 404
+        return jsonify({"error": "Favorito no encontrado o no estás autorizado"}), 404
         
     db.session.delete(favorite)
     db.session.commit()
-    return jsonify({"message": "Favorite deleted"}), 200
-
+    return jsonify({"message": "Favorito eliminado correctamente"}), 200
 
 
 # NOTICIAS
 
 
 def get_external_news_data(endpoint: str, params: dict):
-    """Función general para manejar la obtención de noticias desde el API externo."""
     full_url = f"{NEWS_API_BASE_URL}{endpoint}"
     params['api_token'] = NEWS_API_TOKEN
     try:
@@ -324,9 +172,7 @@ def get_external_news_data(endpoint: str, params: dict):
 
 @api.route('/news', methods=['GET'])
 def get_news():
-    """Endpoint para obtener todas las noticias desde la API externa."""
     try:
-        
         params = {
             "language": "es",
             "limit": 10
