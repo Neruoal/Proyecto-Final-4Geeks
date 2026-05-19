@@ -1,12 +1,11 @@
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import String, Boolean
-from sqlalchemy.orm import Mapped, mapped_column
 
 db = SQLAlchemy()
 
 
-# USUARIO
-
+# ==========================================
+# MODELO: USUARIO
+# ==========================================
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -15,40 +14,43 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False) 
     is_active = db.Column(db.Boolean(), default=True)
 
-    wallet = db.relationship("Wallet", back_populates="user", uselist=False)
+    # Relaciones con borrado en cascada eficiente
+    wallets = db.relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     favorites = db.relationship("Favorite", back_populates="user", cascade="all, delete-orphan")
 
     def serialize(self):
         return {
             "id": self.id,
             "email": self.email,
-            "is_active": self.is_active,
-            "wallet": self.wallet.serialize() if self.wallet else None,
-            "favorites": [fav.serialize() for fav in self.favorites]
+            "is_active": self.is_active
         }
 
 
-# WALLET
-
+# ==========================================
+# MODELO: WALLET (Cuentas Bancarias individuales)
+# ==========================================
 
 class Wallet(db.Model):
     __tablename__ = 'wallets'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    liquidity = db.Column(db.Float, default=0.0) 
     
-    user = db.relationship("User", back_populates="wallet")
+    bank_name = db.Column(db.String(80), nullable=False)  # Ej: "BBVA", "REVOLUT"
+    liquidity = db.Column(db.Float, default=0.0)          # Fondos específicos de este banco
+    
+    user = db.relationship("User", back_populates="wallets")
 
     def serialize(self):
         return {
             "id": self.id,
-            "liquidity": self.liquidity,
-            "user_id": self.user_id
+            "bank_name": self.bank_name,
+            "liquidity": self.liquidity
         }
 
 
-# FAVORITOS
-
+# ==========================================
+# MODELO: FAVORITOS
+# ==========================================
 
 class Favorite(db.Model):
     __tablename__ = 'favorites'
@@ -64,7 +66,6 @@ class Favorite(db.Model):
     def serialize(self):
         return {
             "id": self.id,
-            "user_id": self.user_id,
             "asset_ticker": self.asset_ticker,
             "asset_name": self.asset_name,
             "asset_type": self.asset_type
