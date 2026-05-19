@@ -167,8 +167,7 @@ def delete_bank_from_wallet(current_user, wallet_id):
 
 
 
-
-# FAVORITOS ENDPOINTS
+# FAVORITOS 
 
 
 @api.route('/favorite', methods=['GET'])
@@ -229,7 +228,6 @@ def delete_favorite(current_user, favorite_id):
     db.session.delete(favorite)
     db.session.commit()
     return jsonify({"message": "Favorito eliminado correctamente"}), 200
-
 
 
 # NOTICIAS 

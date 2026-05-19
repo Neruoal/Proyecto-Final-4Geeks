@@ -3,9 +3,9 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 
-# ==========================================
-# MODELO: USUARIO
-# ==========================================
+
+# USUARIO
+
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -14,7 +14,6 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False) 
     is_active = db.Column(db.Boolean(), default=True)
 
-    # Relaciones con borrado en cascada eficiente
     wallets = db.relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     favorites = db.relationship("Favorite", back_populates="user", cascade="all, delete-orphan")
 
@@ -26,17 +25,16 @@ class User(db.Model):
         }
 
 
-# ==========================================
-# MODELO: WALLET (Cuentas Bancarias individuales)
-# ==========================================
+
+# WALLET 
 
 class Wallet(db.Model):
     __tablename__ = 'wallets'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
-    bank_name = db.Column(db.String(80), nullable=False)  # Ej: "BBVA", "REVOLUT"
-    liquidity = db.Column(db.Float, default=0.0)          # Fondos específicos de este banco
+    bank_name = db.Column(db.String(80), nullable=False)  
+    liquidity = db.Column(db.Float, default=0.0)          
     
     user = db.relationship("User", back_populates="wallets")
 
@@ -48,9 +46,9 @@ class Wallet(db.Model):
         }
 
 
-# ==========================================
-# MODELO: FAVORITOS
-# ==========================================
+
+# FAVORITOS
+
 
 class Favorite(db.Model):
     __tablename__ = 'favorites'
