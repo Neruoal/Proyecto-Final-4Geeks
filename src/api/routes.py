@@ -96,9 +96,9 @@ def get_profile(current_user):
 
 
 
-# ==========================================
-# WALLET ENDPOINTS (GESTIÓN MULTIBANCO)
-# ==========================================
+
+# WALLET 
+
 
 @api.route('/wallet', methods=['GET'])
 @token_required
@@ -167,9 +167,9 @@ def delete_bank_from_wallet(current_user, wallet_id):
 
 
 
-# ==========================================
+
 # FAVORITOS ENDPOINTS
-# ==========================================
+
 
 @api.route('/favorite', methods=['GET'])
 @token_required
@@ -232,9 +232,8 @@ def delete_favorite(current_user, favorite_id):
 
 
 
-# ==========================================
-# NOTICIAS ENDPOINTS
-# ==========================================
+# NOTICIAS 
+
 
 def get_external_news_data(endpoint: str, params: dict):
     full_url = f"{NEWS_API_BASE_URL}{endpoint}"
