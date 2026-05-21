@@ -16,6 +16,7 @@ export function AssetCard({
   favoriteId = null,
   onFavToggle,
   showSignal = true,
+  delay = 0,
 }) {
   const endpoint = (type === "fund" || type === "etf") ? "funds" : "stocks";
 
@@ -32,6 +33,7 @@ export function AssetCard({
     setError("");
 
     const fetchData = async () => {
+      await new Promise(r => setTimeout(r, delay));
       try {
         const res = await fetch(`${BASE}/api/${endpoint}/recommendation?ticker=${ticker}`);
         if (!res.ok) throw new Error("Sin datos de cotización");

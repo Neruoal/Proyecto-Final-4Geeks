@@ -8,7 +8,7 @@ from api.models import db, User, Favorite, Wallet
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-ALPHA_VANTAGE_KEY = "XCQLNWZFRTTOEO79"
+ALPHA_VANTAGE_KEY = "PIUL0SVB8R9EB7D1"
 NEWS_API_BASE_URL = "https://api.marketaux.com/v1/news"
 NEWS_API_TOKEN = "EmoKXw1rPXzgQRbrgpjTNBxJURLumarCc4nkSleq"
 

@@ -223,6 +223,7 @@ export function Dashboard() {
                       favoriteId={favMap[asset.ticker] ?? null}
                       onFavToggle={handleFavToggle}
                       showSignal={true}
+                      delay={0}
                     />
                   </div>
                 ))}
