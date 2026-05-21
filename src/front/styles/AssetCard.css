@@ -1,0 +1,172 @@
+.asset-card {
+  background: #ffffff;
+  border: 1px solid #e2e5ea;
+  border-radius: 12px;
+  padding: 18px;
+  height: 100%;
+  font-family: 'DM Sans', sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.asset-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.asset-card-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.asset-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.icon-stock  { background: #eff6ff; color: #3b82f6; }
+.icon-etf    { background: #f0fdf4; color: #16a34a; }
+.icon-fund   { background: #fdf4ff; color: #a855f7; }
+.icon-crypto { background: #fef9c3; color: #ca8a04; }
+
+.asset-card-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e2025;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asset-card-ticker {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem;
+  color: #8a8f98;
+}
+
+.asset-card-type {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.type-stock  { background: #eff6ff; color: #3b82f6; }
+.type-etf    { background: #f0fdf4; color: #16a34a; }
+.type-fund   { background: #fdf4ff; color: #a855f7; }
+.type-crypto { background: #fef9c3; color: #ca8a04; }
+
+.asset-card-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.asset-card-price {
+  font-family: 'DM Mono', monospace;
+  font-size: 1.35rem;
+  font-weight: 500;
+  color: #1e2025;
+  letter-spacing: -0.02em;
+}
+
+.asset-card-change {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.asset-card-change.up   { color: #16a34a; }
+.asset-card-change.down { color: #dc2626; }
+
+.asset-card-hl {
+  display: flex;
+  gap: 14px;
+}
+
+.asset-card-hl-item {
+  font-size: 0.72rem;
+  color: #8a8f98;
+}
+
+.asset-card-hl-item span {
+  font-family: 'DM Mono', monospace;
+  color: #1e2025;
+  font-weight: 500;
+}
+
+.asset-card-signal {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.signal-buy   { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.signal-sell  { background: #fff5f5; color: #dc2626; border: 1px solid #fecaca; }
+.signal-hold  { background: #f7f8fa; color: #6b7280; border: 1px solid #e2e5ea; }
+
+.signal-reason {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: inherit;
+  opacity: 0.85;
+}
+
+.asset-card-fav-btn {
+  background: none;
+  border: 1px solid #e2e5ea;
+  border-radius: 7px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+  color: #8a8f98;
+}
+
+.asset-card-fav-btn:hover,
+.asset-card-fav-btn.active {
+  background: #fef9c3;
+  border-color: #ca8a04;
+  color: #ca8a04;
+}
+
+.asset-card-loading {
+  font-size: 0.78rem;
+  color: #8a8f98;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.asset-card-error {
+  font-size: 0.75rem;
+  color: #dc2626;
+  padding: 6px 0;
+}

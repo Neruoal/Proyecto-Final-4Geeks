@@ -69,7 +69,6 @@ export function Login() {
     <div className="login-page">
       <div className="login-card">
 
-        {/* Brand */}
         <div className="d-flex align-items-center gap-2 mb-4">
           <div className="login-brand-mark">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -83,7 +82,6 @@ export function Login() {
         <p className="login-heading">Bienvenido de vuelta</p>
         <p className="login-subheading">Mercados en tiempo real </p>
 
-        {/* Auth error */}
         {authError && (
           <div className="login-auth-error" role="alert">
             {authError}
@@ -92,7 +90,6 @@ export function Login() {
 
         <form onSubmit={handleSubmit} noValidate>
 
-          {/* Email */}
           <div className="mb-3">
             <label htmlFor="email" className="login-label">Correo electrónico</label>
             <input
@@ -108,7 +105,6 @@ export function Login() {
             {errors.email && <span className="login-field-error">{errors.email}</span>}
           </div>
 
-          {/* Contraseña */}
           <div className="mb-3">
             <div className="d-flex justify-content-between align-items-center mb-1">
               <label htmlFor="password" className="login-label mb-0">Contraseña</label>
@@ -149,7 +145,7 @@ export function Login() {
             {errors.password && <span className="login-field-error">{errors.password}</span>}
           </div>
 
-          {/* Submit */}
+
           <button type="submit" disabled={loading} className="login-submit-btn">
             {loading ? (
               <>
@@ -163,13 +159,13 @@ export function Login() {
 
         </form>
 
-        {/* Divisor */}
-        <div className="login-divider">
-          <hr /><span>o continúa con</span><hr />
-        </div>
 
-        {/* Social */}
-        <div className="d-flex gap-2">
+        {/* <div className="login-divider">
+          <hr /><span>o continúa con</span><hr />
+        </div> */}
+
+
+        {/* <div className="d-flex gap-2">
           <button type="button" className="login-social-btn">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 48 48" aria-hidden="true">
               <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
@@ -185,7 +181,7 @@ export function Login() {
             </svg>
             GitHub
           </button>
-        </div>
+        </div> */}
 
         <p className="login-footer">
           ¿No tienes cuenta? <Link to="/register">Regístrate</Link>
