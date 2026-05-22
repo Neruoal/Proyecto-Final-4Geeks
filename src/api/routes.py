@@ -8,7 +8,7 @@ from api.models import db, User, Favorite, Wallet
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-ALPHA_VANTAGE_KEY = "JCVLJU4A4K9C3XLT"
+ALPHA_VANTAGE_KEY = "PIUL0SVB8R9EB7D1"
 NEWS_API_BASE_URL = "https://api.marketaux.com/v1/news"
 NEWS_API_TOKEN = "EmoKXw1rPXzgQRbrgpjTNBxJURLumarCc4nkSleq"
 
@@ -192,7 +192,10 @@ def add_favorite(current_user, tipo, ticker):
         db.session.add(nuevo_favorito)
         db.session.commit()
        
-        return jsonify({"message": f"¡{ticker.upper()} guardado en favoritos como {tipo}!"}), 201
+        return jsonify({
+            "message": f"¡{ticker.upper()} guardado en favoritos como {tipo}!",
+            "favorite": {"id": nuevo_favorito.id}
+        }), 201
 
     except Exception as e:
         db.session.rollback()
@@ -282,6 +285,7 @@ def stock_history():
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
     data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
+    print("ALPHA VANTAGE RESPONSE:", data)  
     series = data.get("Time Series (Daily)", {})
     if not series:
         return jsonify({"error": "Sin historial"}), 404
@@ -297,6 +301,7 @@ def stock_recommendation():
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
     data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
+    print("ALPHA VANTAGE RESPONSE:", data)  
     series = data.get("Time Series (Daily)", {})
     if not series:
         return jsonify({"error": "Sin datos"}), 404
@@ -348,6 +353,7 @@ def fund_history():
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
     data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
+    print("ALPHA VANTAGE RESPONSE:", data)  
     series = data.get("Time Series (Daily)", {})
     if not series:
         return jsonify({"error": "Sin historial"}), 404
@@ -363,6 +369,7 @@ def fund_recommendation():
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
     data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
+    print("ALPHA VANTAGE RESPONSE:", data)  
     series = data.get("Time Series (Daily)", {})
     if not series:
         return jsonify({"error": "Sin datos"}), 404
@@ -440,7 +447,7 @@ def crypto_history():
     for d, v in sorted(series.items(), reverse=True)[:30]:
         extracted = {"open": None, "high": None, "low": None, "close": None, "volume": None}
         
-        # Mapeo inteligente para cada día
+       
         for key, val in v.items():
             key_lower = key.lower()
             if "open" in key_lower:

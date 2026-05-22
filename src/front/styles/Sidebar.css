@@ -1,0 +1,145 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+/* ── Sidebar ─────────────────────────────────────────── */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: #1e2025;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 100;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.sb-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 20px 16px;
+  text-decoration: none;
+}
+
+.sb-brand-mark {
+  width: 32px;
+  height: 32px;
+  background: #ffffff;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sb-brand-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.sb-brand-name span {
+  color: #e8a940;
+}
+
+.sb-divider {
+  border: none;
+  border-top: 1px solid #2e333a;
+  margin: 0 20px 10px;
+}
+
+.sb-section {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #4a4f58;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0 20px 6px;
+}
+
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 20px;
+  font-size: 0.82rem;
+  color: #8a8f98;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-decoration: none;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.sb-item:hover {
+  background: #24282e;
+  color: #f0ede8;
+}
+
+.sb-item.active {
+  background: #24282e;
+  color: #ffffff;
+}
+
+.sb-item svg {
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+
+.sb-item.active svg,
+.sb-item:hover svg {
+  opacity: 1;
+}
+
+.sb-badge {
+  margin-left: auto;
+  background: white;
+  color: black;
+  font-size: 0.58rem;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 1px 6px;
+  letter-spacing: 0.02em;
+}
+
+.sb-bottom {
+  margin-top: auto;
+  padding: 12px 0;
+  border-top: 1px solid #2e333a;
+}
+
+.sb-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px 4px;
+}
+
+.sb-avatar {
+  width: 28px;
+  height: 28px;
+  background: #2e333a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #f0ede8;
+  flex-shrink: 0;
+}
+
+.sb-email {
+  font-size: 0.72rem;
+  color: #8a8f98;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

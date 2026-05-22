@@ -5,12 +5,15 @@ import {
     createRoutesFromElements,
     Route,
 } from "react-router-dom";
-import { Layout } from "./pages/Layout";
 import { Home } from "./pages/Home";
 import { Single } from "./pages/Single";
 import { Demo } from "./pages/Demo";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
+import { Dashboard } from "./pages/Dashboard";
+import { Sidebar} from "./components/Sidebar";
+import { Favorites } from "./pages/Favorites";
+
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
@@ -20,15 +23,17 @@ export const router = createBrowserRouter(
     // Note: keep in mind that errorElement will be the default page when you don't get a route, customize that page to make your project more attractive.
     // Note: The child paths of the Layout element replace the Outlet component with the elements contained in the "element" attribute of these child paths.
 
-      // Root Route: All navigation will start from here.
-      <Route path="/" element={<Layout />} errorElement={<h1>Not found!</h1>} >
+        <Route>
+          {/* Sin layout */}
+          <Route path="/login"    element={<Login />} />
+          <Route path="/register" element={<Register />} />
 
-        {/* Nested Routes: Defines sub-routes within the BaseHome component. */}
-        <Route path= "/" element={<Home />} />
-        <Route path="/single/:theId" element={ <Single />} />  {/* Dynamic route for single items */}
-        <Route path="/demo" element={<Demo />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+          {/* Con layout */}
+          <Route path="/"          element={<Dashboard />} />
+          <Route path="/favorites" element={<Favorites />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/demo"      element={<Demo />} />
+          <Route path="/single/:theId" element={<Single />} />
       </Route>
     )
 );
