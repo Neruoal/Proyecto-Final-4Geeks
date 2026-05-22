@@ -285,7 +285,7 @@ def stock_history():
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
     data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-    print("ALPHA VANTAGE RESPONSE:", data)  # ← asegúrate que está aquí
+    print("ALPHA VANTAGE RESPONSE:", data)  
     series = data.get("Time Series (Daily)", {})
     if not series:
         return jsonify({"error": "Sin historial"}), 404
@@ -301,7 +301,7 @@ def stock_recommendation():
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
     data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-    print("ALPHA VANTAGE RESPONSE:", data)  # ← asegúrate que está aquí
+    print("ALPHA VANTAGE RESPONSE:", data)  
     series = data.get("Time Series (Daily)", {})
     if not series:
         return jsonify({"error": "Sin datos"}), 404
@@ -353,7 +353,7 @@ def fund_history():
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
     data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-    print("ALPHA VANTAGE RESPONSE:", data)  # ← añade esta línea
+    print("ALPHA VANTAGE RESPONSE:", data)  
     series = data.get("Time Series (Daily)", {})
     if not series:
         return jsonify({"error": "Sin historial"}), 404
@@ -369,7 +369,7 @@ def fund_recommendation():
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
     data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-    print("ALPHA VANTAGE RESPONSE:", data)  # ← añade esta línea
+    print("ALPHA VANTAGE RESPONSE:", data)  
     series = data.get("Time Series (Daily)", {})
     if not series:
         return jsonify({"error": "Sin datos"}), 404
@@ -447,7 +447,7 @@ def crypto_history():
     for d, v in sorted(series.items(), reverse=True)[:30]:
         extracted = {"open": None, "high": None, "low": None, "close": None, "volume": None}
         
-        # Mapeo inteligente para cada día
+       
         for key, val in v.items():
             key_lower = key.lower()
             if "open" in key_lower:
