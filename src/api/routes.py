@@ -8,7 +8,9 @@ from api.models import db, User, Favorite, Wallet
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-ALPHA_VANTAGE_KEY = "TU_API_KEY" # reemplazá con tu key de https://www.alphavantage.co/support/#api-key
+ALPHA_VANTAGE_KEY = "JCVLJU4A4K9C3XLT"
+NEWS_API_BASE_URL = "https://api.marketaux.com/v1/news"
+NEWS_API_TOKEN = "EmoKXw1rPXzgQRbrgpjTNBxJURLumarCc4nkSleq"
 
 
 def av_get(function: str, symbol: str, **kwargs):
@@ -175,45 +177,26 @@ def get_favorites(current_user):
     serialized_favorites = [fav.serialize() for fav in favorites]
     return jsonify(serialized_favorites), 200
 
-
-@api.route('/favorite', methods=['POST'])
+@api.route('/favorite/<string:tipo>/<string:ticker>', methods=['POST'])
 @token_required
-def create_favorite(current_user):
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No se proporcionaron datos"}), 400
+def add_favorite(current_user, tipo, ticker):
 
-    asset_ticker = data.get('asset_ticker')
-    asset_name = data.get('asset_name')
-    asset_type = data.get('asset_type')
-
-    if not asset_ticker or not asset_name or not asset_type:
-        return jsonify({"error": "Falta el identificador (asset_ticker), el nombre (asset_name) o el tipo de activo (asset_type)"}), 400
-
-    already_exists = Favorite.query.filter_by(
-        user_id=current_user.id,
-        asset_ticker=asset_ticker,
-        asset_type=asset_type
-    ).first()
-
-    if already_exists:
-        return jsonify({"message": "Este activo ya se encuentra en tus favoritos", "favorite": already_exists.serialize()}), 200
-
-    favorite = Favorite(
-        user_id=current_user.id,
-        asset_ticker=asset_ticker,
-        asset_name=asset_name,
-        asset_type=asset_type
+    nuevo_favorito = Favorite(
+        user_id = current_user.id,      
+        asset_ticker = ticker.upper(),  
+        asset_name = ticker.upper(),    
+        asset_type = tipo.lower()        
     )
 
     try:
-        db.session.add(favorite)
+        db.session.add(nuevo_favorito)
         db.session.commit()
-        return jsonify({"message": "Favorito creado correctamente", "favorite": favorite.serialize()}), 201
+       
+        return jsonify({"message": f"¡{ticker.upper()} guardado en favoritos como {tipo}!"}), 201
+
     except Exception as e:
         db.session.rollback()
-        print(f"Error al guardar favorito: {str(e)}")
-        return jsonify({"error": "Error interno del servidor al guardar el favorito."}), 500
+        return jsonify({"error": "No se pudo guardar en favoritos"}), 500 
 
 
 @api.route('/favorite/<int:favorite_id>', methods=['DELETE'])
@@ -254,7 +237,6 @@ def get_news():
         }
         data = get_external_news_data("/all", params)
 
-        print("RESPUESTA REAL DE LA API EXTERNA:", data)
 
         news_list = []
         for item in data.get("data", []):
@@ -402,3 +384,129 @@ def fund_recommendation():
     return jsonify({"ticker": ticker, "price": last,
                     "change_percent_30d": change_pct,
                     "signal": signal, "reason": reason}), 200
+
+
+#  CRIPTOMONEDAS
+
+@api.route('/crypto/quote', methods=['GET'])
+def crypto_quote():
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "Falta 'ticker'"}), 400
+
+    data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
+    time_series = data.get("Time Series (Digital Currency Daily)", {})
+    
+    if not time_series:
+        return jsonify({"error": "Sin datos de criptomonedas o límite de API alcanzado"}), 404
+
+    latest_date = next(iter(time_series))
+    today_data = time_series[latest_date]
+
+    extracted = {"price": None, "high": None, "low": None, "volume": None}
+
+    for key, value in today_data.items():
+        key_lower = key.lower()
+        if "close" in key_lower:
+            extracted["price"] = value
+        elif "high" in key_lower:
+            extracted["high"] = value
+        elif "low" in key_lower:
+            extracted["low"] = value
+        elif "volume" in key_lower:
+            extracted["volume"] = value
+
+    return jsonify({
+        "ticker": ticker,
+        "price": extracted["price"],
+        "high": extracted["high"],
+        "low": extracted["low"],
+        "volume": extracted["volume"]
+    })
+
+
+@api.route('/crypto/history', methods=['GET'])
+def crypto_history():
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "Falta 'ticker'"}), 400
+        
+    data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
+    series = data.get("Time Series (Digital Currency Daily)", {})
+    if not series:
+        return jsonify({"error": "Sin historial"}), 404
+        
+    history = []
+    for d, v in sorted(series.items(), reverse=True)[:30]:
+        extracted = {"open": None, "high": None, "low": None, "close": None, "volume": None}
+        
+        # Mapeo inteligente para cada día
+        for key, val in v.items():
+            key_lower = key.lower()
+            if "open" in key_lower:
+                extracted["open"] = val
+            elif "high" in key_lower:
+                extracted["high"] = val
+            elif "low" in key_lower:
+                extracted["low"] = val
+            elif "close" in key_lower:
+                extracted["close"] = val
+            elif "volume" in key_lower:
+                extracted["volume"] = val
+                
+        history.append({
+            "date": d,
+            "open": extracted["open"],
+            "high": extracted["high"],
+            "low": extracted["low"],
+            "close": extracted["close"],
+            "volume": extracted["volume"]
+        })
+        
+    return jsonify({"ticker": ticker, "history": history}), 200 
+
+
+@api.route('/crypto/recommendation', methods=['GET'])
+def crypto_recommendation():
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "Falta 'ticker'"}), 400
+        
+    data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
+    series = data.get("Time Series (Digital Currency Daily)", {})
+    if not series:
+        return jsonify({"error": "Sin datos"}), 404
+
+    closes = []
+    for v in series.values():
+        for key, val in v.items():
+            if "close" in key.lower():
+                closes.append(float(val))
+                break
+
+    if not closes:
+        return jsonify({"error": "No se pudieron procesar los precios de cierre"}), 400
+
+    first, last = closes[0], closes[-1]
+    change_pct = round(((last - first) / first) * 100, 2)
+    avg_30 = sum(closes) / len(closes)
+    avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
+    
+    if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
+        signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
+    elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
+        signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
+    elif abs(change_pct) <= 3:
+        signal, reason = "MANTENER", "Mercado lateral sin señal clara"
+    elif change_pct > 0 and last > avg_30:
+        signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
+    else:
+        signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
+        
+    return jsonify({
+        "ticker": ticker, 
+        "price": last,
+        "change_percent_30d": change_pct,
+        "signal": signal, 
+        "reason": reason
+    }), 200
