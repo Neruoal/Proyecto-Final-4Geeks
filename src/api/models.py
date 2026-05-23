@@ -1,6 +1,25 @@
 from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime, timedelta
 
 db = SQLAlchemy()
+
+class MarketCache(db.Model):
+    __tablename__ = 'market_cache'
+    id = db.Column(db.Integer, primary_key=True)
+    ticker = db.Column(db.String(20), nullable=False)
+    data_type = db.Column(db.String(20), nullable=False)  # quote, history, recommendation
+    response_data = db.Column(db.Text, nullable=False)     # JSON string
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    def is_expired(self):
+        return datetime.utcnow() > self.expires_at
+    def serialize(self):
+        return {
+            "ticker": self.ticker,
+            "data_type": self.data_type,
+            "response_data": self.response_data,
+            "expires_at": self.expires_at.isoformat()
+        }
 
 
 

@@ -2,15 +2,19 @@ import os
 import jwt
 import datetime
 import requests
+import json
 from functools import wraps
 from flask import Flask, request, jsonify, url_for, Blueprint
 from api.models import db, User, Favorite, Wallet
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-ALPHA_VANTAGE_KEY = "PIUL0SVB8R9EB7D1"
-NEWS_API_BASE_URL = "https://api.marketaux.com/v1/news"
-NEWS_API_TOKEN = "EmoKXw1rPXzgQRbrgpjTNBxJURLumarCc4nkSleq"
+from datetime import datetime, timedelta
+from api.models import MarketCache
+ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")
+NEWS_API_BASE_URL = os.getenv(
+    "NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
+NEWS_API_TOKEN = os.getenv("NEWS_API_TOKEN", "")
 
 
 def av_get(function: str, symbol: str, **kwargs):
@@ -23,6 +27,30 @@ def av_get(function: str, symbol: str, **kwargs):
         return r.json()
     except requests.exceptions.RequestException as e:
         raise Exception(f"Error en Alpha Vantage: {e}")
+
+
+def get_cached_or_fetch(ticker, data_type, fetch_func, ttl_minutes=60):
+    """Busca en caché. Si existe y no expiró, devuelve. Si no, ejecuta fetch_func, guarda y devuelve."""
+    cached = MarketCache.query.filter_by(
+        ticker=ticker, data_type=data_type).first()
+    if cached and not cached.is_expired():
+        return json.loads(cached.response_data)
+    data = fetch_func()
+    response_json = json.dumps(data)
+    expires = datetime.utcnow() + timedelta(minutes=ttl_minutes)
+    if cached:
+        cached.response_data = response_json
+        cached.created_at = datetime.utcnow()
+        cached.expires_at = expires
+    else:
+        cached = MarketCache(ticker=ticker, data_type=data_type,
+                             response_data=response_json, expires_at=expires)
+        db.session.add(cached)
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+    return data
 
 
 api = Blueprint('api', __name__)
@@ -177,21 +205,22 @@ def get_favorites(current_user):
     serialized_favorites = [fav.serialize() for fav in favorites]
     return jsonify(serialized_favorites), 200
 
+
 @api.route('/favorite/<string:tipo>/<string:ticker>', methods=['POST'])
 @token_required
 def add_favorite(current_user, tipo, ticker):
 
     nuevo_favorito = Favorite(
-        user_id = current_user.id,      
-        asset_ticker = ticker.upper(),  
-        asset_name = ticker.upper(),    
-        asset_type = tipo.lower()        
+        user_id=current_user.id,
+        asset_ticker=ticker.upper(),
+        asset_name=ticker.upper(),
+        asset_type=tipo.lower()
     )
 
     try:
         db.session.add(nuevo_favorito)
         db.session.commit()
-       
+
         return jsonify({
             "message": f"¡{ticker.upper()} guardado en favoritos como {tipo}!",
             "favorite": {"id": nuevo_favorito.id}
@@ -199,7 +228,7 @@ def add_favorite(current_user, tipo, ticker):
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "No se pudo guardar en favoritos"}), 500 
+        return jsonify({"error": "No se pudo guardar en favoritos"}), 500
 
 
 @api.route('/favorite/<int:favorite_id>', methods=['DELETE'])
@@ -240,7 +269,6 @@ def get_news():
         }
         data = get_external_news_data("/all", params)
 
-
         news_list = []
         for item in data.get("data", []):
             news_list.append({
@@ -264,19 +292,25 @@ def stock_quote():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-    data = av_get("GLOBAL_QUOTE", ticker)
-    q = data.get("Global Quote", {})
-    if not q:
-        return jsonify({"error": "Sin datos"}), 404
-    return jsonify({
-        "ticker": q.get("01. symbol"),
-        "price": q.get("05. price"),
-        "change": q.get("09. change"),
-        "change_percent": q.get("10. change percent"),
-        "high": q.get("03. high"),
-        "low": q.get("04. low"),
-        "volume": q.get("06. volume")
-    }), 200
+
+    def fetch():
+        data = av_get("GLOBAL_QUOTE", ticker)
+        q = data.get("Global Quote", {})
+        if not q:
+            return {"error": "Sin datos"}
+        return {
+            "ticker": q.get("01. symbol"),
+            "price": q.get("05. price"),
+            "change": q.get("09. change"),
+            "change_percent": q.get("10. change percent"),
+            "high": q.get("03. high"),
+            "low": q.get("04. low"),
+            "volume": q.get("06. volume")
+        }
+    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=60)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
 
 
 @api.route('/stocks/history', methods=['GET'])
@@ -284,15 +318,22 @@ def stock_history():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-    data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-    print("ALPHA VANTAGE RESPONSE:", data)  
-    series = data.get("Time Series (Daily)", {})
-    if not series:
-        return jsonify({"error": "Sin historial"}), 404
-    history = [{"date": d, "open": v["1. open"], "high": v["2. high"],
-                "low": v["3. low"], "close": v["4. close"], "volume": v["5. volume"]}
-               for d, v in sorted(series.items(), reverse=True)[:30]]
-    return jsonify({"ticker": ticker, "history": history}), 200
+
+    def fetch():
+        data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
+        series = data.get("Time Series (Daily)", {})
+        if not series:
+            return {"error": "Sin historial"}
+        return {
+            "ticker": ticker,
+            "history": [{"date": d, "open": v["1. open"], "high": v["2. high"],
+                         "low": v["3. low"], "close": v["4. close"], "volume": v["5. volume"]}
+                        for d, v in sorted(series.items(), reverse=True)[:30]]
+        }
+    data = get_cached_or_fetch(ticker, "history", fetch, ttl_minutes=1440)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
 
 
 @api.route('/stocks/recommendation', methods=['GET'])
@@ -300,29 +341,34 @@ def stock_recommendation():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-    data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-    print("ALPHA VANTAGE RESPONSE:", data)  
-    series = data.get("Time Series (Daily)", {})
-    if not series:
-        return jsonify({"error": "Sin datos"}), 404
-    closes = [float(v["4. close"]) for v in series.values()]
-    first, last = closes[0], closes[-1]
-    change_pct = round(((last - first) / first) * 100, 2)
-    avg_30 = sum(closes) / len(closes)
-    avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
-    if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
-        signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
-    elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
-        signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
-    elif abs(change_pct) <= 3:
-        signal, reason = "MANTENER", "Mercado lateral sin señal clara"
-    elif change_pct > 0 and last > avg_30:
-        signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
-    else:
-        signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
-    return jsonify({"ticker": ticker, "price": last,
-                    "change_percent_30d": change_pct,
-                    "signal": signal, "reason": reason}), 200
+
+    def fetch():
+        data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
+        series = data.get("Time Series (Daily)", {})
+        if not series:
+            return {"error": "Sin datos"}
+        closes = [float(v["4. close"]) for v in series.values()]
+        first, last = closes[0], closes[-1]
+        change_pct = round(((last - first) / first) * 100, 2)
+        avg_30 = sum(closes) / len(closes)
+        avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
+        if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
+            signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
+        elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
+            signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
+        elif abs(change_pct) <= 3:
+            signal, reason = "MANTENER", "Mercado lateral sin señal clara"
+        elif change_pct > 0 and last > avg_30:
+            signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
+        else:
+            signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
+        return {"ticker": ticker, "price": last,
+                "change_percent_30d": change_pct,
+                "signal": signal, "reason": reason}
+    data = get_cached_or_fetch(ticker, "recommendation", fetch, ttl_minutes=60)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
 
 #  FONDOS / ETFs
 
@@ -332,19 +378,25 @@ def fund_quote():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-    data = av_get("GLOBAL_QUOTE", ticker)
-    q = data.get("Global Quote", {})
-    if not q:
-        return jsonify({"error": "Sin datos"}), 404
-    return jsonify({
-        "ticker": q.get("01. symbol"),
-        "price": q.get("05. price"),
-        "change": q.get("09. change"),
-        "change_percent": q.get("10. change percent"),
-        "high": q.get("03. high"),
-        "low": q.get("04. low"),
-        "volume": q.get("06. volume")
-    }), 200
+
+    def fetch():
+        data = av_get("GLOBAL_QUOTE", ticker)
+        q = data.get("Global Quote", {})
+        if not q:
+            return {"error": "Sin datos"}
+        return {
+            "ticker": q.get("01. symbol"),
+            "price": q.get("05. price"),
+            "change": q.get("09. change"),
+            "change_percent": q.get("10. change percent"),
+            "high": q.get("03. high"),
+            "low": q.get("04. low"),
+            "volume": q.get("06. volume")
+        }
+    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=60)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
 
 
 @api.route('/funds/history', methods=['GET'])
@@ -352,15 +404,22 @@ def fund_history():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-    data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-    print("ALPHA VANTAGE RESPONSE:", data)  
-    series = data.get("Time Series (Daily)", {})
-    if not series:
-        return jsonify({"error": "Sin historial"}), 404
-    history = [{"date": d, "open": v["1. open"], "high": v["2. high"],
-                "low": v["3. low"], "close": v["4. close"], "volume": v["5. volume"]}
-               for d, v in sorted(series.items(), reverse=True)[:30]]
-    return jsonify({"ticker": ticker, "history": history}), 200
+
+    def fetch():
+        data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
+        series = data.get("Time Series (Daily)", {})
+        if not series:
+            return {"error": "Sin historial"}
+        return {
+            "ticker": ticker,
+            "history": [{"date": d, "open": v["1. open"], "high": v["2. high"],
+                         "low": v["3. low"], "close": v["4. close"], "volume": v["5. volume"]}
+                        for d, v in sorted(series.items(), reverse=True)[:30]]
+        }
+    data = get_cached_or_fetch(ticker, "history", fetch, ttl_minutes=1440)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
 
 
 @api.route('/funds/recommendation', methods=['GET'])
@@ -368,32 +427,37 @@ def fund_recommendation():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-    data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-    print("ALPHA VANTAGE RESPONSE:", data)  
-    series = data.get("Time Series (Daily)", {})
-    if not series:
-        return jsonify({"error": "Sin datos"}), 404
-    closes = [float(v["4. close"]) for v in series.values()]
-    first, last = closes[0], closes[-1]
-    change_pct = round(((last - first) / first) * 100, 2)
-    avg_30 = sum(closes) / len(closes)
-    avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
-    if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
-        signal, reason = "COMPRAR", "Tendencia alcista fuerte en el fondo"
-    elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
-        signal, reason = "VENDER", "Tendencia bajista fuerte en el fondo"
-    elif abs(change_pct) <= 3:
-        signal, reason = "MANTENER", "Fondo lateral sin señal clara"
-    elif change_pct > 0 and last > avg_30:
-        signal, reason = "MANTENER", "Ligera tendencia positiva, monitorear"
-    else:
-        signal, reason = "MANTENER", "Sin tendencia definida"
-    return jsonify({"ticker": ticker, "price": last,
-                    "change_percent_30d": change_pct,
-                    "signal": signal, "reason": reason}), 200
 
+    def fetch():
+        data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
+        series = data.get("Time Series (Daily)", {})
+        if not series:
+            return {"error": "Sin datos"}
+        closes = [float(v["4. close"]) for v in series.values()]
+        first, last = closes[0], closes[-1]
+        change_pct = round(((last - first) / first) * 100, 2)
+        avg_30 = sum(closes) / len(closes)
+        avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
+        if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
+            signal, reason = "COMPRAR", "Tendencia alcista fuerte en el fondo"
+        elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
+            signal, reason = "VENDER", "Tendencia bajista fuerte en el fondo"
+        elif abs(change_pct) <= 3:
+            signal, reason = "MANTENER", "Fondo lateral sin señal clara"
+        elif change_pct > 0 and last > avg_30:
+            signal, reason = "MANTENER", "Ligera tendencia positiva, monitorear"
+        else:
+            signal, reason = "MANTENER", "Sin tendencia definida"
+        return {"ticker": ticker, "price": last,
+                "change_percent_30d": change_pct,
+                "signal": signal, "reason": reason}
+    data = get_cached_or_fetch(ticker, "recommendation", fetch, ttl_minutes=60)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
 
 #  CRIPTOMONEDAS
+
 
 @api.route('/crypto/quote', methods=['GET'])
 def crypto_quote():
@@ -401,35 +465,29 @@ def crypto_quote():
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
 
-    data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
-    time_series = data.get("Time Series (Digital Currency Daily)", {})
-    
-    if not time_series:
-        return jsonify({"error": "Sin datos de criptomonedas o límite de API alcanzado"}), 404
-
-    latest_date = next(iter(time_series))
-    today_data = time_series[latest_date]
-
-    extracted = {"price": None, "high": None, "low": None, "volume": None}
-
-    for key, value in today_data.items():
-        key_lower = key.lower()
-        if "close" in key_lower:
-            extracted["price"] = value
-        elif "high" in key_lower:
-            extracted["high"] = value
-        elif "low" in key_lower:
-            extracted["low"] = value
-        elif "volume" in key_lower:
-            extracted["volume"] = value
-
-    return jsonify({
-        "ticker": ticker,
-        "price": extracted["price"],
-        "high": extracted["high"],
-        "low": extracted["low"],
-        "volume": extracted["volume"]
-    })
+    def fetch():
+        data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
+        time_series = data.get("Time Series (Digital Currency Daily)", {})
+        if not time_series:
+            return {"error": "Sin datos de criptomonedas o límite de API alcanzado"}
+        latest_date = next(iter(time_series))
+        today_data = time_series[latest_date]
+        extracted = {"price": None, "high": None, "low": None, "volume": None}
+        for key, value in today_data.items():
+            key_lower = key.lower()
+            if "close" in key_lower:
+                extracted["price"] = value
+            elif "high" in key_lower:
+                extracted["high"] = value
+            elif "low" in key_lower:
+                extracted["low"] = value
+            elif "volume" in key_lower:
+                extracted["volume"] = value
+        return {"ticker": ticker, **extracted}
+    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=60)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
 
 
 @api.route('/crypto/history', methods=['GET'])
@@ -437,40 +495,34 @@ def crypto_history():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-        
-    data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
-    series = data.get("Time Series (Digital Currency Daily)", {})
-    if not series:
-        return jsonify({"error": "Sin historial"}), 404
-        
-    history = []
-    for d, v in sorted(series.items(), reverse=True)[:30]:
-        extracted = {"open": None, "high": None, "low": None, "close": None, "volume": None}
-        
-       
-        for key, val in v.items():
-            key_lower = key.lower()
-            if "open" in key_lower:
-                extracted["open"] = val
-            elif "high" in key_lower:
-                extracted["high"] = val
-            elif "low" in key_lower:
-                extracted["low"] = val
-            elif "close" in key_lower:
-                extracted["close"] = val
-            elif "volume" in key_lower:
-                extracted["volume"] = val
-                
-        history.append({
-            "date": d,
-            "open": extracted["open"],
-            "high": extracted["high"],
-            "low": extracted["low"],
-            "close": extracted["close"],
-            "volume": extracted["volume"]
-        })
-        
-    return jsonify({"ticker": ticker, "history": history}), 200 
+
+    def fetch():
+        data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
+        series = data.get("Time Series (Digital Currency Daily)", {})
+        if not series:
+            return {"error": "Sin historial"}
+        history = []
+        for d, v in sorted(series.items(), reverse=True)[:30]:
+            extracted = {"open": None, "high": None,
+                         "low": None, "close": None, "volume": None}
+            for key, val in v.items():
+                key_lower = key.lower()
+                if "open" in key_lower:
+                    extracted["open"] = val
+                elif "high" in key_lower:
+                    extracted["high"] = val
+                elif "low" in key_lower:
+                    extracted["low"] = val
+                elif "close" in key_lower:
+                    extracted["close"] = val
+                elif "volume" in key_lower:
+                    extracted["volume"] = val
+            history.append({"date": d, **extracted})
+        return {"ticker": ticker, "history": history}
+    data = get_cached_or_fetch(ticker, "history", fetch, ttl_minutes=1440)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
 
 
 @api.route('/crypto/recommendation', methods=['GET'])
@@ -478,42 +530,38 @@ def crypto_recommendation():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-        
-    data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
-    series = data.get("Time Series (Digital Currency Daily)", {})
-    if not series:
-        return jsonify({"error": "Sin datos"}), 404
 
-    closes = []
-    for v in series.values():
-        for key, val in v.items():
-            if "close" in key.lower():
-                closes.append(float(val))
-                break
-
-    if not closes:
-        return jsonify({"error": "No se pudieron procesar los precios de cierre"}), 400
-
-    first, last = closes[0], closes[-1]
-    change_pct = round(((last - first) / first) * 100, 2)
-    avg_30 = sum(closes) / len(closes)
-    avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
-    
-    if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
-        signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
-    elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
-        signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
-    elif abs(change_pct) <= 3:
-        signal, reason = "MANTENER", "Mercado lateral sin señal clara"
-    elif change_pct > 0 and last > avg_30:
-        signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
-    else:
-        signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
-        
-    return jsonify({
-        "ticker": ticker, 
-        "price": last,
-        "change_percent_30d": change_pct,
-        "signal": signal, 
-        "reason": reason
-    }), 200
+    def fetch():
+        data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
+        series = data.get("Time Series (Digital Currency Daily)", {})
+        if not series:
+            return {"error": "Sin datos"}
+        closes = []
+        for v in series.values():
+            for key, val in v.items():
+                if "close" in key.lower():
+                    closes.append(float(val))
+                    break
+        if not closes:
+            return {"error": "No se pudieron procesar los precios de cierre"}
+        first, last = closes[0], closes[-1]
+        change_pct = round(((last - first) / first) * 100, 2)
+        avg_30 = sum(closes) / len(closes)
+        avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
+        if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
+            signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
+        elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
+            signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
+        elif abs(change_pct) <= 3:
+            signal, reason = "MANTENER", "Mercado lateral sin señal clara"
+        elif change_pct > 0 and last > avg_30:
+            signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
+        else:
+            signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
+        return {"ticker": ticker, "price": last,
+                "change_percent_30d": change_pct,
+                "signal": signal, "reason": reason}
+    data = get_cached_or_fetch(ticker, "recommendation", fetch, ttl_minutes=60)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
