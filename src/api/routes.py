@@ -1,16 +1,14 @@
 import os
 import jwt
-import datetime
+import datetime as dt
 import requests
 import json
 from functools import wraps
 from flask import Flask, request, jsonify, url_for, Blueprint
-from api.models import db, User, Favorite, Wallet
+from api.models import db, User, Favorite, Wallet, MarketCache
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, timedelta
-from api.models import MarketCache
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")
 NEWS_API_BASE_URL = os.getenv(
     "NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
@@ -30,17 +28,16 @@ def av_get(function: str, symbol: str, **kwargs):
 
 
 def get_cached_or_fetch(ticker, data_type, fetch_func, ttl_minutes=60):
-    """Busca en caché. Si existe y no expiró, devuelve. Si no, ejecuta fetch_func, guarda y devuelve."""
     cached = MarketCache.query.filter_by(
         ticker=ticker, data_type=data_type).first()
     if cached and not cached.is_expired():
         return json.loads(cached.response_data)
     data = fetch_func()
     response_json = json.dumps(data)
-    expires = datetime.utcnow() + timedelta(minutes=ttl_minutes)
+    expires = dt.datetime.utcnow() + dt.timedelta(minutes=ttl_minutes)
     if cached:
         cached.response_data = response_json
-        cached.created_at = datetime.utcnow()
+        cached.created_at = dt.datetime.utcnow()
         cached.expires_at = expires
     else:
         cached = MarketCache(ticker=ticker, data_type=data_type,
@@ -80,14 +77,11 @@ def signup():
     body = request.get_json()
     if not body or not body.get('email') or not body.get('password'):
         return jsonify({'message': 'Email and password are required'}), 400
-
     if User.query.filter_by(email=body['email']).first():
         return jsonify({'message': 'Email already registered'}), 400
-
     hashed_password = generate_password_hash(body['password'])
     new_user = User(email=body['email'],
                     password=hashed_password, is_active=True)
-
     try:
         db.session.add(new_user)
         db.session.commit()
@@ -102,17 +96,14 @@ def login():
     body = request.get_json()
     if not body or not body.get('email') or not body.get('password'):
         return jsonify({'message': 'Email and password are required'}), 400
-
     user = User.query.filter_by(email=body['email']).first()
     if not user or not check_password_hash(user.password, body['password']):
         return jsonify({'message': 'Invalid email or password'}), 401
-
     token = jwt.encode({
         'user_id': user.id,
         'email': user.email,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        'exp': dt.datetime.utcnow() + dt.timedelta(hours=24)
     }, os.environ.get('FLASK_APP_KEY', 'secret_key'), algorithm='HS256')
-
     return jsonify({'token': token, 'user': user.serialize()}), 200
 
 
@@ -120,7 +111,6 @@ def login():
 @token_required
 def get_profile(current_user):
     return jsonify(current_user.serialize()), 200
-
 
 # WALLET
 
@@ -138,21 +128,17 @@ def add_bank_to_wallet(current_user):
     body = request.get_json()
     if not body or "bank_name" not in body or "liquidity" not in body:
         return jsonify({"error": "Faltan los campos 'bank_name' y/o 'liquidity'"}), 400
-
     try:
         bank_name = body["bank_name"].strip().upper()
         liquidity = float(body["liquidity"])
-
         already_exists = Wallet.query.filter_by(
             user_id=current_user.id, bank_name=bank_name).first()
         if already_exists:
             return jsonify({"error": f"El banco {bank_name} ya está en tu cartera. Usa PUT para modificar su saldo."}), 400
-
         new_bank = Wallet(user_id=current_user.id,
                           bank_name=bank_name, liquidity=liquidity)
         db.session.add(new_bank)
         db.session.commit()
-
         return jsonify({"message": "Banco añadido correctamente", "bank": new_bank.serialize()}), 201
     except ValueError:
         return jsonify({"error": "La liquidez debe ser un número válido"}), 400
@@ -164,19 +150,15 @@ def update_bank_liquidity(current_user):
     body = request.get_json()
     if not body or "bank_name" not in body or "liquidity" not in body:
         return jsonify({"error": "Faltan los campos 'bank_name' y/o 'liquidity'"}), 400
-
     try:
         bank_name = body["bank_name"].strip().upper()
         nuevo_saldo = float(body["liquidity"])
-
         bank_record = Wallet.query.filter_by(
             user_id=current_user.id, bank_name=bank_name).first()
         if not bank_record:
             return jsonify({"error": f"No se encontró el banco {bank_name} en tu cartera"}), 404
-
         bank_record.liquidity = nuevo_saldo
         db.session.commit()
-
         return jsonify({"message": f"Fondos de {bank_name} actualizados", "bank": bank_record.serialize()}), 200
     except ValueError:
         return jsonify({"error": "La liquidez debe ser un número válido"}), 400
@@ -189,11 +171,9 @@ def delete_bank_from_wallet(current_user, wallet_id):
         id=wallet_id, user_id=current_user.id).first()
     if not bank_record:
         return jsonify({"error": "Banco no encontrado en tu cartera"}), 404
-
     db.session.delete(bank_record)
     db.session.commit()
     return jsonify({"message": f"Banco {bank_record.bank_name} eliminado de la cartera"}), 200
-
 
 # FAVORITOS
 
@@ -209,23 +189,19 @@ def get_favorites(current_user):
 @api.route('/favorite/<string:tipo>/<string:ticker>', methods=['POST'])
 @token_required
 def add_favorite(current_user, tipo, ticker):
-
     nuevo_favorito = Favorite(
         user_id=current_user.id,
         asset_ticker=ticker.upper(),
         asset_name=ticker.upper(),
         asset_type=tipo.lower()
     )
-
     try:
         db.session.add(nuevo_favorito)
         db.session.commit()
-
         return jsonify({
             "message": f"¡{ticker.upper()} guardado en favoritos como {tipo}!",
             "favorite": {"id": nuevo_favorito.id}
         }), 201
-
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "No se pudo guardar en favoritos"}), 500
@@ -238,11 +214,9 @@ def delete_favorite(current_user, favorite_id):
         id=favorite_id, user_id=current_user.id).first()
     if not favorite:
         return jsonify({"error": "Favorito no encontrado o no estás autorizado"}), 404
-
     db.session.delete(favorite)
     db.session.commit()
     return jsonify({"message": "Favorito eliminado correctamente"}), 200
-
 
 # NOTICIAS
 
@@ -263,12 +237,8 @@ def get_external_news_data(endpoint: str, params: dict):
 @api.route('/news', methods=['GET'])
 def get_news():
     try:
-        params = {
-            "language": "es",
-            "limit": 10
-        }
+        params = {"language": "es", "limit": 10}
         data = get_external_news_data("/all", params)
-
         news_list = []
         for item in data.get("data", []):
             news_list.append({
@@ -279,13 +249,12 @@ def get_news():
                 "url": item.get("url")
             })
         return jsonify(news_list), 200
-
     except Exception as e:
         print(f"ERROR EXACTO EN /NEWS: {str(e)}")
         return jsonify({"error": f"No se pudieron cargar las noticias externas. Motivo: {str(e)}"}), 500
-
-
+    
 #  ACCIONES
+
 
 @api.route('/stocks/quote', methods=['GET'])
 def stock_quote():
