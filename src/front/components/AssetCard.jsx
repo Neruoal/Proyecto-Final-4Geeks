@@ -8,6 +8,25 @@ const typeLabel   = { stock: "Stock", etf: "ETF", fund: "Fondo", crypto: "Crypto
 const signalClass = { COMPRAR: "signal-buy", VENDER: "signal-sell", MANTENER: "signal-hold" };
 const signalIcon  = { COMPRAR: "↑", VENDER: "↓", MANTENER: "→" };
 
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutos en ms
+function getCachedData(ticker, type) {
+  const key = `asset_cache_${type}_${ticker}`;
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    const { data, timestamp } = JSON.parse(raw);
+    if (Date.now() - timestamp < CACHE_TTL) return data;
+    localStorage.removeItem(key);
+    return null;
+  } catch {
+    return null;
+  }
+}
+function setCachedData(ticker, type, data) {
+  const key = `asset_cache_${type}_${ticker}`;
+  localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+}
+
 
 export function AssetCard({
   ticker,
@@ -27,11 +46,15 @@ export function AssetCard({
   const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
-    
     if (!ticker) return;
     setLoading(true);
     setError("");
-
+    const cached = getCachedData(ticker, type);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+      return;
+    }
     const fetchData = async () => {
       await new Promise(r => setTimeout(r, delay));
       try {
@@ -40,14 +63,13 @@ export function AssetCard({
         const json = await res.json();
         if (json.error) throw new Error(json.error);
         setData(json);
+        setCachedData(ticker, type, json);
       } catch (e) {
         setError(e.message || "Error al cargar datos");
       } finally {
         setLoading(false);
       }
     };
-
-
     fetchData();
   }, [ticker, type]);
 
