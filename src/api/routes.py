@@ -3,12 +3,20 @@ import jwt
 import datetime as dt
 import requests
 import json
+import pdfplumber
+import csv
+import io
+import re
 from functools import wraps
 from flask import Flask, request, jsonify, url_for, Blueprint
 from api.models import db, User, Favorite, Wallet, MarketCache
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+
+
+
+
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")
 NEWS_API_BASE_URL = os.getenv(
     "NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
@@ -142,6 +150,40 @@ def add_bank_to_wallet(current_user):
         return jsonify({"message": "Banco añadido correctamente", "bank": new_bank.serialize()}), 201
     except ValueError:
         return jsonify({"error": "La liquidez debe ser un número válido"}), 400
+    
+
+@api.route('/wallet/upload-statement', methods=['POST'])
+@token_required
+def upload_statement(current_user):
+    bank_name = request.args.get('bank_name', '').strip().upper()
+    file = request.files.get('file')
+    billetera = Wallet.query.filter_by(user_id=current_user.id, bank_name=bank_name).first()
+
+    if not billetera or not file:
+        return jsonify({"error": "Banco no encontrado o falta el archivo"}), 404
+
+    with pdfplumber.open(file) as pdf:
+        texto = "".join([p.extract_text() for p in pdf.pages[:2]])
+
+    # LÓGICA REVOLUT: Busca la frase clave
+    if "Saldo de cierre" in texto:
+        partes = texto.split("Saldo de cierre")
+        match = re.search(r'([\d\.,]+)', partes[1])
+        valor = match.group(1).replace('.', '').replace(',', '.') if match else "0"
+        billetera.liquidity = float(valor)
+
+    # LÓGICA MYINVESTOR: Busca la primera fila con fecha (día/mes/año)
+    elif "Detalle últimos movimientos" in texto:
+        lineas = texto.split('\n')
+        for linea in lineas:
+            if re.match(r'\d{2}/\d{2}/\d{4}', linea):
+                partes = linea.split()
+                saldo_str = partes[-2].replace(',', '.')
+                billetera.liquidity = float(saldo_str)
+                break
+    
+    db.session.commit()
+    return jsonify({"message": "Saldo actualizado", "new_liquidity": billetera.liquidity}), 200
 
 
 @api.route('/wallet', methods=['PUT'])

@@ -64,8 +64,6 @@ class Wallet(db.Model):
             "liquidity": self.liquidity
         }
 
-
-
 # FAVORITOS
 
 
