@@ -7,6 +7,7 @@ import pdfplumber
 import csv
 import io
 import re
+import google.generativeai as genai
 from functools import wraps
 from flask import Flask, request, jsonify, url_for, Blueprint
 from api.models import db, User, Favorite, Wallet, MarketCache
@@ -120,6 +121,36 @@ def login():
 def get_profile(current_user):
     return jsonify(current_user.serialize()), 200
 
+
+# IA
+
+genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+
+@api.route('/ask-ai', methods=['POST'])
+@token_required
+def ask_ai(current_user):
+    if not current_user:
+        return jsonify({"message": "Usuario no autorizado"}), 401
+
+    
+    data = request.get_json()
+    if not data or "question" not in data:
+        return jsonify({"message": "La pregunta es obligatoria"}), 400
+    
+    pregunta = data.get("question")
+
+    try:   
+        modelo = genai.GenerativeModel('models/gemini-3.5-flash')
+         
+        prompt_completo = f"Eres un asesor financiero profesional. Responde esta duda: {pregunta}"
+        respuesta = modelo.generate_content(prompt_completo)
+        
+        return jsonify({"answer": respuesta.text}), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Error en IA: {str(e)}"}), 500
+
+
 # WALLET
 
 
@@ -157,6 +188,7 @@ def add_bank_to_wallet(current_user):
 def upload_statement(current_user):
     bank_name = request.args.get('bank_name', '').strip().upper()
     file = request.files.get('file')
+    
     billetera = Wallet.query.filter_by(user_id=current_user.id, bank_name=bank_name).first()
 
     if not billetera or not file:
@@ -165,25 +197,25 @@ def upload_statement(current_user):
     with pdfplumber.open(file) as pdf:
         texto = "".join([p.extract_text() for p in pdf.pages[:2]])
 
-    # LÓGICA REVOLUT: Busca la frase clave
-    if "Saldo de cierre" in texto:
-        partes = texto.split("Saldo de cierre")
-        match = re.search(r'([\d\.,]+)', partes[1])
-        valor = match.group(1).replace('.', '').replace(',', '.') if match else "0"
-        billetera.liquidity = float(valor)
+    try:
+        if bank_name == "REVOLUT":
+            partes = texto.split("Saldo de cierre")
+            match = re.search(r'([\d\.,]+)', partes[1])
+            valor = match.group(1).replace('.', '').replace(',', '.')
+            billetera.liquidity = float(valor)
 
-    # LÓGICA MYINVESTOR: Busca la primera fila con fecha (día/mes/año)
-    elif "Detalle últimos movimientos" in texto:
-        lineas = texto.split('\n')
-        for linea in lineas:
-            if re.match(r'\d{2}/\d{2}/\d{4}', linea):
-                partes = linea.split()
-                saldo_str = partes[-2].replace(',', '.')
-                billetera.liquidity = float(saldo_str)
-                break
-    
-    db.session.commit()
-    return jsonify({"message": "Saldo actualizado", "new_liquidity": billetera.liquidity}), 200
+        elif bank_name == "MYINVESTOR":
+            for linea in texto.split('\n'):
+                if re.match(r'\d{2}/\d{2}/\d{4}', linea):
+                    saldo_str = linea.split()[-2].replace(',', '.')
+                    billetera.liquidity = float(saldo_str)
+                    break
+        
+        db.session.commit()
+        return jsonify({"message": "Saldo actualizado", "new_liquidity": billetera.liquidity}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"No se pudo procesar el PDF: {str(e)}"}), 400
 
 
 @api.route('/wallet', methods=['PUT'])

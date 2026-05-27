@@ -25,6 +25,7 @@ requests = "*"
 pdfplumber = "*"
 google-genai = "*"
 pydantic = "*"
+google-generativeai = "*"
 
 [requires]
 python_version = "3.13"
