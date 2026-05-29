@@ -17,7 +17,10 @@ from google import genai
 # Inicialización obligatoria
 load_dotenv()
 
+# Configuración de Gemini (Una sola API Key)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
+
+# --- AQUI VAN TUS CONSTANTES DE NOTICIAS ---
 NEWS_API_BASE_URL = os.getenv("NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
 NEWS_API_TOKEN = os.getenv("NEWS_API_TOKEN", "")
 
@@ -48,7 +51,7 @@ def token_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
-# ── SISTEMA DE CACHÉ CENTRALIZADO (Reemplaza a get_cached_or_fetch viejo) ─────
+# ── SISTEMA DE CACHÉ CENTRALIZADO ─────────────────────────────────────────────
 
 def get_market_data(ticker, data_type, fetch_func, ttl_minutes=360):
     """
@@ -172,24 +175,6 @@ def update_profile(current_user):
         return jsonify({"error": str(e)}), 500
     
 
-# ── CONFIGURACIÓN DE ROTACIÓN DE CLAVES ───────────────────────────────────────
-
-api_keys_string = os.getenv("GOOGLE_API_KEY", "")
-
-api_keys_string = os.getenv("GOOGLE_API_KEY", "")
-GEMINI_KEYS = [k.strip() for k in api_keys_string.split(",") if k.strip()]
-current_key_index = 0
-
-
-
-def rotate_key():
-    global current_key_index, model
-
-    current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
-
-    print(f"Rotando a API KEY índice {current_key_index}")
-
-
 # ── IA ────────────────────────────────────────────────────────────────────────
 
 @api.route('/ask-ai', methods=['POST'])
@@ -211,15 +196,12 @@ def ask_ai(current_user):
     if ticker:
         try:
             t = yf.Ticker(ticker)
-
-            # 🔥 fuente principal (estable)
             hist = t.history(period="5d")
 
             price = None
             if not hist.empty:
                 price = float(hist["Close"].iloc[-1])
 
-            # fallback info (opcional)
             info = {}
             try:
                 info = t.info or {}
@@ -247,8 +229,6 @@ Resumen: {(info.get('longBusinessSummary') or '')[:300]}
     print("=== CONTEXTO FINAL ===")
     print(contexto_yahoo)
 
-
-    # ── PROMPT IA ───────────────────────────
     prompt_completo = f"""
 Eres un analista financiero tipo terminal de trading.
 
@@ -261,7 +241,6 @@ REGLAS:
 - Responde como una persona normal, no como una IA.
 - maximo 8 lineas de respuesta, se breve y directo al punto.
 
-
 DATOS:
 {contexto_yahoo}
 
@@ -269,8 +248,6 @@ PREGUNTA:
 {pregunta}
 """
     
-
-    # ── IA CON ROTACIÓN ──────────────────────────
     try:
         client = get_client()
         response = client.models.generate_content(
@@ -280,27 +257,15 @@ PREGUNTA:
         return jsonify({"answer": response.text}), 200
 
     except Exception as e:
-        print(f"Error con key {current_key_index}: {e}. Rotando...")
-        rotate_key()
-
-        try:
-            client = get_client()
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt_completo
-            )
-            return jsonify({"answer": response.text}), 200
-
-        except Exception as e2:
-            return jsonify({
-                "error": f"Error crítico tras rotación: {str(e2)}"
-            }), 500
+        print(f"Error generando respuesta de IA: {e}")
+        return jsonify({
+            "error": f"Error al procesar tu consulta con la IA: {str(e)}"
+        }), 500
         
     
 
-# ── SECCIÓN: WALLET (GESTIÓN DE BANCOS Y PDF) ─────────────────────────────────
+# ── SECCIÓN: WALLET (GESTIÓN DE BANCOS) ───────────────────────────────────────
 
-# GET: Obtener todos los bancos
 @api.route('/wallet', methods=['GET'])
 @token_required
 def get_wallet(current_user):
@@ -430,118 +395,6 @@ def get_news():
         return jsonify({"error": str(e)}), 500
 
 
-# ── STOCKS (Alpha Vantage) ────────────────────────────────────────────────────
-
-@api.route('/stocks/quote', methods=['GET'])
-def stock_quote():
-    ticker = request.args.get("ticker", "").strip().upper()
-    if not ticker: return jsonify({"error": "Falta 'ticker'"}), 400
-    def fetch():
-        data = av_get("GLOBAL_QUOTE", ticker)
-        q    = data.get("Global Quote", {})
-        if not q: return {"error": "Sin datos"}
-        return {"ticker": q.get("01. symbol"), "price": q.get("05. price"),
-                "change": q.get("09. change"), "change_percent": q.get("10. change percent"),
-                "high": q.get("03. high"), "low": q.get("04. low"), "volume": q.get("06. volume")}
-    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=360)
-    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
-
-
-@api.route('/stocks/history', methods=['GET'])
-def stock_history():
-    ticker = request.args.get("ticker", "").strip().upper()
-    if not ticker: return jsonify({"error": "Falta 'ticker'"}), 400
-    series = fetch_daily_series(ticker, asset_type="stock")
-    data   = build_history(ticker, series, asset_type="stock")
-    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
-
-
-@api.route('/stocks/recommendation', methods=['GET'])
-def stock_recommendation():
-    ticker = request.args.get("ticker", "").strip().upper()
-    if not ticker: return jsonify({"error": "Falta 'ticker'"}), 400
-    series = fetch_daily_series(ticker, asset_type="stock")
-    data   = build_recommendation(ticker, series, asset_type="stock")
-    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
-
-
-# ── FUNDS (Alpha Vantage) ─────────────────────────────────────────────────────
-
-@api.route('/funds/quote', methods=['GET'])
-def fund_quote():
-    ticker = request.args.get("ticker", "").strip().upper()
-    if not ticker: return jsonify({"error": "Falta 'ticker'"}), 400
-    def fetch():
-        data = av_get("GLOBAL_QUOTE", ticker)
-        q    = data.get("Global Quote", {})
-        if not q: return {"error": "Sin datos"}
-        return {"ticker": q.get("01. symbol"), "price": q.get("05. price"),
-                "change": q.get("09. change"), "change_percent": q.get("10. change percent"),
-                "high": q.get("03. high"), "low": q.get("04. low"), "volume": q.get("06. volume")}
-    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=360)
-    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
-
-
-@api.route('/funds/history', methods=['GET'])
-def fund_history():
-    ticker = request.args.get("ticker", "").strip().upper()
-    if not ticker: return jsonify({"error": "Falta 'ticker'"}), 400
-    series = fetch_daily_series(ticker, asset_type="stock")
-    data   = build_history(ticker, series, asset_type="stock")
-    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
-
-
-@api.route('/funds/recommendation', methods=['GET'])
-def fund_recommendation():
-    ticker = request.args.get("ticker", "").strip().upper()
-    if not ticker: return jsonify({"error": "Falta 'ticker'"}), 400
-    series = fetch_daily_series(ticker, asset_type="stock")
-    data   = build_recommendation(ticker, series, asset_type="stock")
-    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
-
-
-# ── CRYPTO (Alpha Vantage) ────────────────────────────────────────────────────
-
-@api.route('/crypto/quote', methods=['GET'])
-def crypto_quote():
-    ticker = request.args.get("ticker", "").strip().upper()
-    if not ticker: return jsonify({"error": "Falta 'ticker'"}), 400
-    def fetch():
-        data        = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
-        time_series = data.get("Time Series (Digital Currency Daily)", {})
-        if not time_series: return {"error": "Sin datos de criptomonedas"}
-        latest_date = next(iter(time_series))
-        today_data  = time_series[latest_date]
-        extracted   = {"price": None, "high": None, "low": None, "volume": None}
-        for key, value in today_data.items():
-            k = key.lower()
-            if "close"  in k: extracted["price"]  = value
-            elif "high" in k: extracted["high"]   = value
-            elif "low"  in k: extracted["low"]    = value
-            elif "volume" in k: extracted["volume"] = value
-        return {"ticker": ticker, **extracted}
-    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=360)
-    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
-
-
-@api.route('/crypto/history', methods=['GET'])
-def crypto_history():
-    ticker = request.args.get("ticker", "").strip().upper()
-    if not ticker: return jsonify({"error": "Falta 'ticker'"}), 400
-    series = fetch_daily_series(ticker, asset_type="crypto")
-    data   = build_history(ticker, series, asset_type="crypto")
-    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
-
-
-@api.route('/crypto/recommendation', methods=['GET'])
-def crypto_recommendation():
-    ticker = request.args.get("ticker", "").strip().upper()
-    if not ticker: return jsonify({"error": "Falta 'ticker'"}), 400
-    series = fetch_daily_series(ticker, asset_type="crypto")
-    data   = build_recommendation(ticker, series, asset_type="crypto")
-    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
-
-
 # ── YAHOO FINANCE ─────────────────────────────────────────────────────────────
 
 @api.route('/search', methods=['GET'])
@@ -582,7 +435,7 @@ def stock_info():
             }
         except Exception as e:
             return {"error": str(e)}
-    data = get_cached_or_fetch(ticker, "yf_info", fetch, ttl_minutes=360)
+    data = get_market_data(ticker, "yf_info", fetch, ttl_minutes=360)
     return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
 
 
@@ -620,7 +473,7 @@ def stock_yf_recommendation():
             }
         except Exception as e:
             return {"error": str(e)}
-    data = get_cached_or_fetch(ticker, "yf_recommendation", fetch, ttl_minutes=360)
+    data = get_market_data(ticker, "yf_recommendation", fetch, ttl_minutes=360)
     return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
 
 
@@ -659,7 +512,7 @@ def fund_yf_recommendation():
             }
         except Exception as e:
             return {"error": str(e)}
-    data = get_cached_or_fetch(ticker, "yf_recommendation", fetch, ttl_minutes=360)
+    data = get_market_data(ticker, "yf_recommendation", fetch, ttl_minutes=360)
     return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
 
 
@@ -698,5 +551,5 @@ def crypto_yf_recommendation():
             }
         except Exception as e:
             return {"error": str(e)}
-    data = get_cached_or_fetch(ticker, "yf_crypto_rec", fetch, ttl_minutes=360)
+    data = get_market_data(ticker, "yf_crypto_rec", fetch, ttl_minutes=360)
     return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
