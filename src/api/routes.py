@@ -5,22 +5,67 @@ import requests
 import json
 import pdfplumber
 import re
-from google import genai
 from functools import wraps
+from dotenv import load_dotenv
+load_dotenv() 
+
+# ── GEMINI KEYS ─────────────────────────────
+
+api_keys_string = os.getenv("GOOGLE_API_KEY", "")
+
+GEMINI_KEYS = [
+    key.strip()
+    for key in api_keys_string.split(",")
+    if key.strip()
+]
+
+current_key_index = 0
+
 from flask import Flask, request, jsonify, url_for, Blueprint
 from api.models import db, User, Favorite, Wallet, MarketCache
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import yfinance as yf
+from google import genai
+
+def get_client():
+    return genai.Client(api_key=GEMINI_KEYS[current_key_index])
+
+def rotate_key():
+    global current_key_index
+    current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
+    print(f"🔄 Rotando a key index: {current_key_index}")
 
 
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")
 NEWS_API_BASE_URL = os.getenv("NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
-NEWS_API_TOKEN    = os.getenv("NEWS_API_TOKEN", "")
+NEWS_API_TOKEN = os.getenv("NEWS_API_TOKEN", "")
 
-client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
 
+
+api = Blueprint('api', __name__)
+CORS(api)
+
+# ── DECORADORES Y UTILS ───────────────────────────────────────────────────────
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            token = request.headers['Authorization'].replace('Bearer ', '')
+        if not token:
+            return jsonify({'message': 'Token is missing'}), 401
+        try:
+            data = jwt.decode(token, os.environ.get('FLASK_APP_KEY', 'secret_key'), algorithms=['HS256'])
+            current_user = User.query.get(data['user_id'])
+            if not current_user:
+                return jsonify({'message': 'User not found'}), 401
+        except Exception:
+            return jsonify({'message': 'Token is invalid'}), 401
+        return f(current_user, *args, **kwargs)
+    return decorated
 
 def av_get(function: str, symbol: str, **kwargs):
     params = {"function": function, "symbol": symbol, "apikey": ALPHA_VANTAGE_KEY}
@@ -200,6 +245,24 @@ def update_profile(current_user):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+    
+
+# ── CONFIGURACIÓN DE ROTACIÓN DE CLAVES ───────────────────────────────────────
+
+api_keys_string = os.getenv("GOOGLE_API_KEY", "")
+
+api_keys_string = os.getenv("GOOGLE_API_KEY", "")
+GEMINI_KEYS = [k.strip() for k in api_keys_string.split(",") if k.strip()]
+current_key_index = 0
+
+
+
+def rotate_key():
+    global current_key_index, model
+
+    current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
+
+    print(f"Rotando a API KEY índice {current_key_index}")
 
 
 # ── IA ────────────────────────────────────────────────────────────────────────
@@ -208,18 +271,121 @@ def update_profile(current_user):
 @token_required
 def ask_ai(current_user):
     data = request.get_json()
+    
     if not data or "question" not in data:
         return jsonify({"message": "La pregunta es obligatoria"}), 400
+
     pregunta = data.get("question")
+    ticker = data.get("ticker", "").strip().upper()
+
+    print("TICKER RECIBIDO:", ticker)
+
+    # ── YAHOO CONTEXTO ───────────────────────────
+    contexto_yahoo = ""
+
+    if ticker:
+        try:
+            t = yf.Ticker(ticker)
+
+            # 🔥 fuente principal (estable)
+            hist = t.history(period="5d")
+
+            price = None
+            if not hist.empty:
+                price = float(hist["Close"].iloc[-1])
+
+            # fallback info (opcional)
+            info = {}
+            try:
+                info = t.info or {}
+            except:
+                info = {}
+
+            print("INFO KEYS:", list(info.keys()) if info else [])
+            print("PRICE (history):", price)
+
+            if not price:
+                contexto_yahoo = f"[SIN DATOS DE PRECIO PARA {ticker}]"
+            else:
+                contexto_yahoo = f"""
+DATOS YAHOO FINANCE PARA {ticker}
+Nombre: {info.get('longName', ticker)}
+Precio actual: {price}
+Sector: {info.get('sector', 'N/A')}
+Resumen: {(info.get('longBusinessSummary') or '')[:300]}
+"""
+
+        except Exception as e:
+            print("ERROR YAHOO:", e)
+            contexto_yahoo = f"[ERROR YAHOO FINANCE: {str(e)}]"
+
+    print("=== CONTEXTO FINAL ===")
+    print(contexto_yahoo)
+
+
+    # ── PROMPT IA ───────────────────────────
+    prompt_completo = f"""
+Eres un analista financiero automático tipo terminal de trading.
+
+REGLAS ESTRICTAS:
+
+Usa los datos proporcionados como base principal.
+Si faltan datos, haz supuestos razonables basados en el sector y el tipo de empresa.
+Si los datos son limitados, aún así da una conclusión orientativa.
+No respondas "INSUFFICIENT DATA".
+Si algo no está disponible, indícalo como "no disponible en los datos proporcionados".
+Responde en máximo 8 líneas
+Usa bullets cortos
+NO escribas explicaciones largas
+NO hagas introducciones
+NO repitas la pregunta
+NO uses lenguaje académico
+No actúes como profesor
+
+PROHIBIDO:
+- inferir tendencias futuras
+- mencionar crecimiento, potencial, liderazgo o riesgo si no está en los datos
+- usar conocimiento del modelo
+
+FORMATO DE SALIDA:
+Solo puedes usar valores explícitos del bloque DATOS.
+Si no está en DATOS, escribe: "NOT IN DATA"
+
+DATOS:
+{contexto_yahoo}
+
+PREGUNTA:
+{pregunta}
+"""
+    
+
+    # ── IA CON ROTACIÓN ──────────────────────────
     try:
+        client = get_client()
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=f"Eres un asesor financiero profesional. Responde esta duda: {pregunta}"
+            model="gemini-2.5-flash",
+            contents=prompt_completo
         )
         return jsonify({"answer": response.text}), 200
-    except Exception as e:
-        return jsonify({"error": f"Error en IA: {str(e)}"}), 500
 
+    except Exception as e:
+        print(f"Error con key {current_key_index}: {e}. Rotando...")
+        rotate_key()
+
+        try:
+            client = get_client()
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt_completo
+            )
+            return jsonify({"answer": response.text}), 200
+
+        except Exception as e2:
+            return jsonify({
+                "error": f"Error crítico tras rotación: {str(e2)}"
+            }), 500
+        
+    
 
 # ── WALLET ────────────────────────────────────────────────────────────────────
 
