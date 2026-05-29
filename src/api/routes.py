@@ -20,11 +20,6 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
 NEWS_API_BASE_URL = os.getenv("NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
 NEWS_API_TOKEN = os.getenv("NEWS_API_TOKEN", "")
 
-print("============== DIAGNÓSTICO DE IA ==============")
-print(f"¿La API Key está vacía?: {GOOGLE_API_KEY == ''}")
-print(f"Longitud de la API Key detectada: {len(GOOGLE_API_KEY)} caracteres")
-print("===============================================")
-
 api = Blueprint('api', __name__)
 CORS(api)
 
