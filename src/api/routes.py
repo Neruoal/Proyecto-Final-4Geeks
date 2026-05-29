@@ -3,24 +3,9 @@ import jwt
 import datetime as dt
 import requests
 import json
-import pdfplumber
 import re
 from functools import wraps
 from dotenv import load_dotenv
-load_dotenv() 
-
-# ── GEMINI KEYS ─────────────────────────────
-
-api_keys_string = os.getenv("GOOGLE_API_KEY", "")
-
-GEMINI_KEYS = [
-    key.strip()
-    for key in api_keys_string.split(",")
-    if key.strip()
-]
-
-current_key_index = 0
-
 from flask import Flask, request, jsonify, url_for, Blueprint
 from api.models import db, User, Favorite, Wallet, MarketCache
 from api.utils import generate_sitemap, APIException
@@ -29,23 +14,19 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import yfinance as yf
 from google import genai
 
-def get_client():
-    return genai.Client(api_key=GEMINI_KEYS[current_key_index])
+# Inicialización obligatoria
+load_dotenv()
 
-def rotate_key():
-    global current_key_index
-    current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
-    print(f"🔄 Rotando a key index: {current_key_index}")
-
-
-ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
 NEWS_API_BASE_URL = os.getenv("NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
 NEWS_API_TOKEN = os.getenv("NEWS_API_TOKEN", "")
 
-
-
 api = Blueprint('api', __name__)
 CORS(api)
+
+def get_client():
+    return genai.Client(api_key=GOOGLE_API_KEY)
+
 
 # ── DECORADORES Y UTILS ───────────────────────────────────────────────────────
 
@@ -67,124 +48,68 @@ def token_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
-def av_get(function: str, symbol: str, **kwargs):
-    params = {"function": function, "symbol": symbol, "apikey": ALPHA_VANTAGE_KEY}
-    params.update(kwargs)
-    try:
-        r = requests.get("https://www.alphavantage.co/query", params=params)
-        r.raise_for_status()
-        return r.json()
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"Error en Alpha Vantage: {e}")
+# ── SISTEMA DE CACHÉ CENTRALIZADO (Reemplaza a get_cached_or_fetch viejo) ─────
 
-
-def get_cached_or_fetch(ticker, data_type, fetch_func, ttl_minutes=60):
+def get_market_data(ticker, data_type, fetch_func, ttl_minutes=360):
+    """
+    Gestiona el caché para cualquier llamada a Yahoo Finance.
+    """
     cached = MarketCache.query.filter_by(ticker=ticker, data_type=data_type).first()
+    
+    # Retornar caché si es válido
     if cached and not cached.is_expired():
         return json.loads(cached.response_data)
+    
+    # Obtener datos nuevos usando la función que le pasemos
     data = fetch_func()
+    
+    # Si hay error en la función, devolver sin guardar
+    if "error" in data:
+        return data
+        
+    # Guardar en caché
     response_json = json.dumps(data)
     expires = dt.datetime.utcnow() + dt.timedelta(minutes=ttl_minutes)
+    
     if cached:
         cached.response_data = response_json
-        cached.created_at    = dt.datetime.utcnow()
-        cached.expires_at    = expires
+        cached.created_at = dt.datetime.utcnow()
+        cached.expires_at = expires
     else:
-        cached = MarketCache(ticker=ticker, data_type=data_type,
-                             response_data=response_json, expires_at=expires)
-        db.session.add(cached)
+        new_cache = MarketCache(ticker=ticker, data_type=data_type, 
+                                response_data=response_json, expires_at=expires)
+        db.session.add(new_cache)
+    
     try:
         db.session.commit()
     except Exception:
         db.session.rollback()
+        
     return data
 
+# ── FUNCIÓN DE CÁLCULO ESTÁNDAR PARA YAHOO ───────────────────────────────────
 
-def fetch_daily_series(ticker, asset_type="stock"):
-    def fetch():
-        if asset_type == "crypto":
-            data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
-            return data.get("Time Series (Digital Currency Daily)", {})
-        else:
-            data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-            return data.get("Time Series (Daily)", {})
-    return get_cached_or_fetch(ticker, f"daily_series_{asset_type}", fetch, ttl_minutes=360)
-
-
-def build_history(ticker, series, asset_type="stock"):
-    if not series:
-        return {"error": "Sin historial"}
-    history = []
-    for d, v in sorted(series.items(), reverse=True)[:30]:
-        if asset_type == "crypto":
-            entry = {"open": None, "high": None, "low": None, "close": None, "volume": None}
-            for key, val in v.items():
-                k = key.lower()
-                if "open"   in k: entry["open"]   = val
-                elif "high" in k: entry["high"]   = val
-                elif "low"  in k: entry["low"]    = val
-                elif "close" in k: entry["close"] = val
-                elif "volume" in k: entry["volume"] = val
-            history.append({"date": d, **entry})
-        else:
-            history.append({
-                "date": d, "open": v["1. open"], "high": v["2. high"],
-                "low": v["3. low"], "close": v["4. close"], "volume": v["5. volume"],
-            })
-    return {"ticker": ticker, "history": history}
-
-
-def build_recommendation(ticker, series, asset_type="stock"):
-    if not series:
-        return {"error": "Sin datos"}
-    closes = []
-    for v in series.values():
-        if asset_type == "crypto":
-            for key, val in v.items():
-                if "close" in key.lower():
-                    closes.append(float(val))
-                    break
-        else:
-            closes.append(float(v["4. close"]))
-    if not closes:
-        return {"error": "No se pudieron procesar los precios de cierre"}
-    first, last  = closes[0], closes[-1]
-    change_pct   = round(((last - first) / first) * 100, 2)
-    avg_30       = sum(closes) / len(closes)
-    avg_7        = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
-    if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
+def calculate_yf_metrics(ticker, hist):
+    """Lógica unificada para calcular señales basadas en histórico de Yahoo"""
+    closes = hist["Close"].tolist()
+    price = float(closes[-1])
+    avg_30 = sum(closes) / len(closes)
+    avg_7 = sum(closes[-7:]) / 7
+    change_pct = round(((closes[-1] - closes[0]) / closes[0]) * 100, 2)
+    
+    if change_pct > 5 and price > avg_30 and avg_7 > avg_30:
         signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
-    elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
+    elif change_pct < -5 and price < avg_30 and avg_7 < avg_30:
         signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
     elif abs(change_pct) <= 3:
         signal, reason = "MANTENER", "Mercado lateral sin señal clara"
-    elif change_pct > 0 and last > avg_30:
-        signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
     else:
-        signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
-    return {"ticker": ticker, "price": last, "change_percent_30d": change_pct,
-            "signal": signal, "reason": reason}
-
-
-api = Blueprint('api', __name__)
-CORS(api)
-
-
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            token = request.headers['Authorization'].replace('Bearer ', '')
-        if not token:
-            return jsonify({'message': 'Token is missing'}), 401
-        try:
-            data = jwt.decode(token, os.environ.get('FLASK_APP_KEY', 'secret_key'), algorithms=['HS256'])
-            current_user = User.query.get(data['user_id'])
-        except:
-            return jsonify({'message': 'Token is invalid'}), 401
-        return f(current_user, *args, **kwargs)
-    return decorated
+        signal, reason = "MANTENER", "Leve tendencia o sin consistencia clara"
+        
+    return {
+        "ticker": ticker, "price": round(price, 2), "change_percent_30d": change_pct,
+        "signal": signal, "reason": reason
+    }
 
 
 # ── AUTH ─────────────────────────────────────────────────────────────────────
@@ -325,31 +250,17 @@ Resumen: {(info.get('longBusinessSummary') or '')[:300]}
 
     # ── PROMPT IA ───────────────────────────
     prompt_completo = f"""
-Eres un analista financiero automático tipo terminal de trading.
+Eres un analista financiero tipo terminal de trading.
 
-REGLAS ESTRICTAS:
+REGLAS:
+- Usa los datos proporcionados como base
+- Puedes completar con conocimiento general del mercado
+- No inventes números
+- No bloquees la respuesta por falta de datos
+- Siempre da una recomendación útil-
+- Responde como una persona normal, no como una IA.
+- maximo 8 lineas de respuesta, se breve y directo al punto.
 
-Usa los datos proporcionados como base principal.
-Si faltan datos, haz supuestos razonables basados en el sector y el tipo de empresa.
-Si los datos son limitados, aún así da una conclusión orientativa.
-No respondas "INSUFFICIENT DATA".
-Si algo no está disponible, indícalo como "no disponible en los datos proporcionados".
-Responde en máximo 8 líneas
-Usa bullets cortos
-NO escribas explicaciones largas
-NO hagas introducciones
-NO repitas la pregunta
-NO uses lenguaje académico
-No actúes como profesor
-
-PROHIBIDO:
-- inferir tendencias futuras
-- mencionar crecimiento, potencial, liderazgo o riesgo si no está en los datos
-- usar conocimiento del modelo
-
-FORMATO DE SALIDA:
-Solo puedes usar valores explícitos del bloque DATOS.
-Si no está en DATOS, escribe: "NOT IN DATA"
 
 DATOS:
 {contexto_yahoo}
@@ -387,90 +298,63 @@ PREGUNTA:
         
     
 
-# ── WALLET ────────────────────────────────────────────────────────────────────
+# ── SECCIÓN: WALLET (GESTIÓN DE BANCOS Y PDF) ─────────────────────────────────
 
+# GET: Obtener todos los bancos
 @api.route('/wallet', methods=['GET'])
 @token_required
-def get_user_wallet(current_user):
-    user_banks = Wallet.query.filter_by(user_id=current_user.id).all()
-    return jsonify([bank.serialize() for bank in user_banks]), 200
+def get_wallet(current_user):
+    banks = Wallet.query.filter_by(user_id=current_user.id).all()
+    return jsonify([b.serialize() for b in banks]), 200
 
 
 @api.route('/wallet', methods=['POST'])
 @token_required
-def add_bank_to_wallet(current_user):
-    body = request.get_json()
-    if not body or "bank_name" not in body or "liquidity" not in body:
-        return jsonify({"error": "Faltan los campos 'bank_name' y/o 'liquidity'"}), 400
-    try:
-        bank_name = body["bank_name"].strip().upper()
-        liquidity = float(body["liquidity"])
-        if Wallet.query.filter_by(user_id=current_user.id, bank_name=bank_name).first():
-            return jsonify({"error": f"El banco {bank_name} ya está en tu cartera."}), 400
-        new_bank = Wallet(user_id=current_user.id, bank_name=bank_name, liquidity=liquidity)
-        db.session.add(new_bank)
-        db.session.commit()
-        return jsonify({"message": "Banco añadido correctamente", "bank": new_bank.serialize()}), 201
-    except ValueError:
-        return jsonify({"error": "La liquidez debe ser un número válido"}), 400
+def add_bank(current_user):
+    data = request.get_json()
+    bank_name = data.get("bank_name", "").strip().upper()
+    liquidity = data.get("liquidity")
 
-
-@api.route('/wallet/upload-statement', methods=['POST'])
-@token_required
-def upload_statement(current_user):
-    bank_name = request.args.get('bank_name', '').strip().upper()
-    file      = request.files.get('file')
-    billetera = Wallet.query.filter_by(user_id=current_user.id, bank_name=bank_name).first()
-    if not billetera or not file:
-        return jsonify({"error": "Banco no encontrado o falta el archivo"}), 404
-    with pdfplumber.open(file) as pdf:
-        texto = "".join([p.extract_text() for p in pdf.pages[:2]])
-    try:
-        if bank_name == "REVOLUT":
-            partes = texto.split("Saldo de cierre")
-            match  = re.search(r'([\d\.,]+)', partes[1])
-            valor  = match.group(1).replace('.', '').replace(',', '.')
-            billetera.liquidity = float(valor)
-        elif bank_name == "MYINVESTOR":
-            for linea in texto.split('\n'):
-                if re.match(r'\d{2}/\d{2}/\d{4}', linea):
-                    saldo_str = linea.split()[-2].replace(',', '.')
-                    billetera.liquidity = float(saldo_str)
-                    break
-        db.session.commit()
-        return jsonify({"message": "Saldo actualizado", "new_liquidity": billetera.liquidity}), 200
-    except Exception as e:
-        return jsonify({"error": f"No se pudo procesar el PDF: {str(e)}"}), 400
+    if not bank_name or liquidity is None:
+        return jsonify({"error": "Faltan datos"}), 400
+    
+    new_bank = Wallet(user_id=current_user.id, bank_name=bank_name, liquidity=float(liquidity))
+    db.session.add(new_bank)
+    db.session.commit()
+    return jsonify({"message": "Banco añadido", "bank": new_bank.serialize()}), 201
 
 
 @api.route('/wallet', methods=['PUT'])
 @token_required
-def update_bank_liquidity(current_user):
-    body = request.get_json()
-    if not body or "bank_name" not in body or "liquidity" not in body:
-        return jsonify({"error": "Faltan los campos 'bank_name' y/o 'liquidity'"}), 400
-    try:
-        bank_name   = body["bank_name"].strip().upper()
-        nuevo_saldo = float(body["liquidity"])
-        bank_record = Wallet.query.filter_by(user_id=current_user.id, bank_name=bank_name).first()
-        if not bank_record:
-            return jsonify({"error": f"No se encontró el banco {bank_name}"}), 404
-        bank_record.liquidity = nuevo_saldo
-        db.session.commit()
-        return jsonify({"message": f"Fondos de {bank_name} actualizados", "bank": bank_record.serialize()}), 200
-    except ValueError:
-        return jsonify({"error": "La liquidez debe ser un número válido"}), 400
+def update_bank(current_user):
+    data = request.get_json()
+    bank_name = data.get("bank_name", "").strip().upper()
+    new_liquidity = data.get("liquidity")
 
+    if not bank_name or new_liquidity is None:
+        return jsonify({"error": "Faltan datos"}), 400
 
-@api.route('/wallet/<int:wallet_id>', methods=['DELETE'])
-@token_required
-def delete_bank_from_wallet(current_user, wallet_id):
-    bank_record = Wallet.query.filter_by(id=wallet_id, user_id=current_user.id).first()
-    if not bank_record:
-        return jsonify({"error": "Banco no encontrado en tu cartera"}), 404
-    db.session.delete(bank_record)
+    bank = Wallet.query.filter_by(user_id=current_user.id, bank_name=bank_name).first()
+    if not bank:
+        return jsonify({"error": "Banco no encontrado"}), 404
+    
+    bank.liquidity = float(new_liquidity)
     db.session.commit()
-    return jsonify({"message": f"Banco {bank_record.bank_name} eliminado"}), 200
+    return jsonify({"message": "Saldo actualizado", "bank": bank.serialize()}), 200
+
+
+@api.route('/wallet/<int:id>', methods=['DELETE'])
+@token_required
+def delete_bank(current_user, id):
+    bank = Wallet.query.filter_by(id=id, user_id=current_user.id).first()
+    
+    if not bank:
+        return jsonify({"error": "Banco no encontrado o no autorizado"}), 404
+    
+    db.session.delete(bank)
+    db.session.commit()
+    
+    return jsonify({"message": f"Banco eliminado correctamente"}), 200
 
 
 # ── FAVORITOS ─────────────────────────────────────────────────────────────────
