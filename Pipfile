@@ -23,6 +23,10 @@ sqlalchemy = "*"
 pyjwt = "*"
 requests = "*"
 yfinance = "*"
+pdfplumber = "*"
+google-genai = "*"
+pydantic = "*"
+google-generativeai = "*"
 
 [requires]
 python_version = "3.13"

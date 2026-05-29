@@ -3,12 +3,21 @@ import jwt
 import datetime as dt
 import requests
 import json
+import pdfplumber
+import csv
+import io
+import re
+import google.generativeai as genai
 from functools import wraps
 from flask import Flask, request, jsonify, url_for, Blueprint
 from api.models import db, User, Favorite, Wallet, MarketCache
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+
+
+
+
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")
 NEWS_API_BASE_URL = os.getenv(
     "NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
@@ -208,6 +217,36 @@ def update_profile(current_user):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+# IA
+
+genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+
+@api.route('/ask-ai', methods=['POST'])
+@token_required
+def ask_ai(current_user):
+    if not current_user:
+        return jsonify({"message": "Usuario no autorizado"}), 401
+
+    
+    data = request.get_json()
+    if not data or "question" not in data:
+        return jsonify({"message": "La pregunta es obligatoria"}), 400
+    
+    pregunta = data.get("question")
+
+    try:   
+        modelo = genai.GenerativeModel('models/gemini-3.5-flash')
+         
+        prompt_completo = f"Eres un asesor financiero profesional. Responde esta duda: {pregunta}"
+        respuesta = modelo.generate_content(prompt_completo)
+        
+        return jsonify({"answer": respuesta.text}), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Error en IA: {str(e)}"}), 500
+
+
+# WALLET
 
 
 @api.route('/wallet', methods=['GET'])
@@ -237,6 +276,41 @@ def add_bank_to_wallet(current_user):
         return jsonify({"message": "Banco añadido correctamente", "bank": new_bank.serialize()}), 201
     except ValueError:
         return jsonify({"error": "La liquidez debe ser un número válido"}), 400
+    
+
+@api.route('/wallet/upload-statement', methods=['POST'])
+@token_required
+def upload_statement(current_user):
+    bank_name = request.args.get('bank_name', '').strip().upper()
+    file = request.files.get('file')
+    
+    billetera = Wallet.query.filter_by(user_id=current_user.id, bank_name=bank_name).first()
+
+    if not billetera or not file:
+        return jsonify({"error": "Banco no encontrado o falta el archivo"}), 404
+
+    with pdfplumber.open(file) as pdf:
+        texto = "".join([p.extract_text() for p in pdf.pages[:2]])
+
+    try:
+        if bank_name == "REVOLUT":
+            partes = texto.split("Saldo de cierre")
+            match = re.search(r'([\d\.,]+)', partes[1])
+            valor = match.group(1).replace('.', '').replace(',', '.')
+            billetera.liquidity = float(valor)
+
+        elif bank_name == "MYINVESTOR":
+            for linea in texto.split('\n'):
+                if re.match(r'\d{2}/\d{2}/\d{4}', linea):
+                    saldo_str = linea.split()[-2].replace(',', '.')
+                    billetera.liquidity = float(saldo_str)
+                    break
+        
+        db.session.commit()
+        return jsonify({"message": "Saldo actualizado", "new_liquidity": billetera.liquidity}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"No se pudo procesar el PDF: {str(e)}"}), 400
 
 
 @api.route('/wallet', methods=['PUT'])
