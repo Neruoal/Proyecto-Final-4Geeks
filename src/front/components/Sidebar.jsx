@@ -10,15 +10,14 @@ const IconUser   = () => <svg width="15" height="15" fill="none" viewBox="0 0 24
 const IconLogout = () => <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9V5.25A2.25 2.25 0 0 1 10.5 3h6a2.25 2.25 0 0 1 2.25 2.25v13.5A2.25 2.25 0 0 1 16.5 21h-6a2.25 2.25 0 0 1-2.25-2.25V15m-3 0-3-3m0 0 3-3m-3 3H15"/></svg>;
 
 const NAV = [
-  { label: "Overview",   path: "/dashboard",  icon: <IconGrid  /> },
+  { label: "Mi cartera",   path: "/dashboard",  icon: <IconWallet /> },
   { label: "Mercados",   path: "/markets",    icon: <IconChart />, badge: "Live" },
-  { label: "Mi Cartera", path: "/wallet",     icon: <IconWallet /> },
   { label: "Favoritos",  path: "/favorites",  icon: <IconStar  /> },
   { label: "Noticias",   path: "/news",       icon: <IconNews  /> },
 ];
 
 
-export function Sidebar({ email = "" }) {
+export function Sidebar({ email = "", fullName = "", avatarUrl = "" }) {
   const navigate  = useNavigate();
   const location  = useLocation();
 
@@ -27,8 +26,8 @@ export function Sidebar({ email = "" }) {
     navigate("/login");
   };
 
-  const initial = email?.[0]?.toUpperCase() ?? "U";
-  const username = email?.split("@")[0] ?? "Usuario";
+  const initial  = email?.[0]?.toUpperCase() ?? "U";
+  const username = fullName || email?.split("@")[0] || "Usuario";
 
   return (
     <aside className="sidebar">
@@ -71,8 +70,16 @@ export function Sidebar({ email = "" }) {
 
       <div className="sb-bottom">
         <div className="sb-user">
-          <div className="sb-avatar">{initial}</div>
-          <span className="sb-email">{username}</span>
+          <div className="sb-avatar">
+            {avatarUrl
+              ? <img src={avatarUrl} alt={username} onError={(e) => { e.target.style.display = "none"; }} />
+              : initial
+            }
+          </div>
+          <div className="sb-user-info">
+            <span className="sb-name">{username}</span>
+            <span className="sb-email">{email}</span>
+          </div>
         </div>
         <button className="sb-item" onClick={handleLogout}>
           <IconLogout />

@@ -30,20 +30,26 @@ class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False) 
+    password = db.Column(db.String(255), nullable=False)
     is_active = db.Column(db.Boolean(), default=True)
+    full_name = db.Column(db.String(120), nullable=True)
+    company = db.Column(db.String(120), nullable=True)
+    avatar_url = db.Column(db.String(500), nullable=True)
 
-    wallets = db.relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
-    favorites = db.relationship("Favorite", back_populates="user", cascade="all, delete-orphan")
+    wallet = db.relationship("Wallet", back_populates="user", uselist=False)
+    favorites = db.relationship("Favorite", back_populates="user")
 
     def serialize(self):
         return {
             "id": self.id,
             "email": self.email,
-            "is_active": self.is_active
+            "is_active": self.is_active,
+            "full_name": self.full_name,
+            "company": self.company,
+            "avatar_url": self.avatar_url,
+            "wallet": self.wallet.serialize() if self.wallet else None,
+            "favorites": [fav.serialize() for fav in self.favorites if fav.serialize() is not None]
         }
-
-
 
 # WALLET 
 
@@ -55,7 +61,7 @@ class Wallet(db.Model):
     bank_name = db.Column(db.String(80), nullable=False)  
     liquidity = db.Column(db.Float, default=0.0)          
     
-    user = db.relationship("User", back_populates="wallets")
+    user = db.relationship("User", back_populates="wallet")
 
     def serialize(self):
         return {

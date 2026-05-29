@@ -1,3 +1,5 @@
+@import "./Sidebar.css";
+
 .asset-card {
   background: #ffffff;
   border: 1px solid #e2e5ea;
@@ -8,13 +10,15 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 200px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
 .asset-card-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 
 .asset-card-left {
@@ -32,10 +36,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 .icon-stock  { background: #eff6ff; color: #3b82f6; }
@@ -46,16 +51,16 @@
 .asset-card-name {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #1e2025;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .asset-card-ticker {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: #8a8f98;
+  color: var(--text-muted);
 }
 
 .asset-card-type {
@@ -73,80 +78,19 @@
 .type-fund   { background: #fdf4ff; color: #a855f7; }
 .type-crypto { background: #fef9c3; color: #ca8a04; }
 
-.asset-card-price-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.asset-card-price {
-  font-family: 'DM Mono', monospace;
-  font-size: 1.35rem;
-  font-weight: 500;
-  color: #1e2025;
-  letter-spacing: -0.02em;
-}
-
-.asset-card-change {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.78rem;
-  font-weight: 500;
-}
-
-.asset-card-change.up   { color: #16a34a; }
-.asset-card-change.down { color: #dc2626; }
-
-.asset-card-hl {
-  display: flex;
-  gap: 14px;
-}
-
-.asset-card-hl-item {
-  font-size: 0.72rem;
-  color: #8a8f98;
-}
-
-.asset-card-hl-item span {
-  font-family: 'DM Mono', monospace;
-  color: #1e2025;
-  font-weight: 500;
-}
-
-.asset-card-signal {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin-top: 2px;
-}
-
-.signal-buy   { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
-.signal-sell  { background: #fff5f5; color: #dc2626; border: 1px solid #fecaca; }
-.signal-hold  { background: #f7f8fa; color: #6b7280; border: 1px solid #e2e5ea; }
-
-.signal-reason {
-  font-size: 0.7rem;
-  font-weight: 400;
-  color: inherit;
-  opacity: 0.85;
-}
-
 .asset-card-fav-btn {
   background: none;
-  border: 1px solid #e2e5ea;
+  border: 1px solid var(--border);
   border-radius: 7px;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
   flex-shrink: 0;
-  color: #8a8f98;
+  color: var(--text-muted);
 }
 
 .asset-card-fav-btn:hover,
@@ -156,9 +100,85 @@
   color: #ca8a04;
 }
 
+.asset-card-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.asset-card-price {
+  font-family: var(--font-mono);
+  font-size: 1.3rem;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.asset-card-change {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.asset-card-change.up   { color: #16a34a; }
+.asset-card-change.down { color: #dc2626; }
+
+.asset-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--bg);
+  border-bottom: 1px solid var(--bg);
+}
+
+.asset-card-meta-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.meta-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.meta-value {
+  font-size: 0.75rem;
+  color: var(--text);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.asset-card-signal {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.signal-buy  { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.signal-sell { background: #fff5f5; color: #dc2626; border: 1px solid #fecaca; }
+.signal-hold { background: #f7f8fa; color: #6b7280; border: 1px solid var(--border); }
+
+.signal-reason {
+  font-size: 0.68rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
 .asset-card-loading {
   font-size: 0.78rem;
-  color: #8a8f98;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 8px;
