@@ -39,12 +39,14 @@ export function Dashboard() {
   const [profile, setProfile] = useState(null);
   const [favorites, setFavorites] = useState([]);
   const [wallet, setWallet] = useState([]);
-  const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [favMap, setFavMap] = useState({});
 
   const FEATURED = [
     { ticker: "AAPL", name: "Apple", type: "stock" },
+    { ticker: "VOO", name: "Vanguard S&P 500", type: "etf" },
+    { ticker: "VWIGX", name: "Vanguard Intl Growth", type: "fund" },
+    { ticker: "BTC", name: "Bitcoin", type: "crypto" }
   ];
 
   useEffect(() => {
@@ -61,11 +63,10 @@ export function Dashboard() {
 
     const fetchAll = async () => {
       try {
-        const [profRes, favRes, walletRes, newsRes] = await Promise.all([
+        const [profRes, favRes, walletRes, ] = await Promise.all([
           fetch(`${BASE}/api/profile`, { headers }),
           fetch(`${BASE}/api/favorite`, { headers }),
           fetch(`${BASE}/api/wallet`, { headers }),
-          fetch(`${BASE}/api/news`),
         ]);
 
         if (profRes.status === 401) {
@@ -77,7 +78,6 @@ export function Dashboard() {
         const profData = await profRes.json();
         const favData = await favRes.json();
         const walletData = await walletRes.json();
-        const newsData = await newsRes.json();
 
         const favList = Array.isArray(favData) ? favData : [];
         const favsByTicker = {};
@@ -90,7 +90,6 @@ export function Dashboard() {
         setFavorites(favList);
         setFavMap(favsByTicker);
         setWallet(Array.isArray(walletData) ? walletData : []);
-        setNews(Array.isArray(newsData) ? newsData.slice(0, 5) : []);
       } catch (err) {
         console.error("Error cargando dashboard:", err);
       } finally {
@@ -122,12 +121,15 @@ export function Dashboard() {
 
   return (
     <div className="dash-wrap">
-      <Sidebar email={profile?.email ?? ""} />
-
+<Sidebar
+  email={profile?.email ?? ""}
+  fullName={profile?.full_name ?? ""}
+  avatarUrl={profile?.avatar_url ?? ""}
+/>
       <div className="dash-main">
         <header className="topbar">
           <div className="topbar-title">
-            <h2>{greeting()}, {profile?.email?.split("@")[0] ?? "Usuario"}</h2>
+            <h2>{greeting()}, {profile?.full_name?.split(" ")[0] || profile?.email?.split("@")[0] || "Usuario"}</h2>
             <p>Resumen de tu cartera · {today()}</p>
           </div>
 
@@ -214,7 +216,7 @@ export function Dashboard() {
               <div className="section-title">Activos destacados</div>
 
               <div className="row g-3 mb-4">
-                {FEATURED.map((asset) => (
+                {FEATURED.map((asset, i) => (
                   <div className="col-md-3" key={asset.ticker}>
                     <AssetCard
                       ticker={asset.ticker}
@@ -223,39 +225,10 @@ export function Dashboard() {
                       favoriteId={favMap[asset.ticker] ?? null}
                       onFavToggle={handleFavToggle}
                       showSignal={true}
-                      delay={0}
+                      delay={i * 1200}
                     />
                   </div>
                 ))}
-              </div>
-
-              <div className="section-title">Últimas noticias</div>
-
-              <div className="news-card">
-                <div className="row">
-                  {news.length === 0 ? (
-                    <div className="col">
-                      <p className="dash-empty">No hay noticias disponibles.</p>
-                    </div>
-                  ) : (
-                    news.map((item) => (
-                      <div className="col-md-4" key={item.id}>
-                        <div className="news-item">
-                          <div className="news-source">{item.source ?? "Fuente"}</div>
-                          <div className="news-headline">
-                            {item.url ? (
-                              <a href={item.url} target="_blank" rel="noreferrer">
-                                {item.title}
-                              </a>
-                            ) : (
-                              item.title
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
               </div>
             </>
           )}

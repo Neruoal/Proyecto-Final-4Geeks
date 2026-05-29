@@ -59,6 +59,81 @@ def get_cached_or_fetch(ticker, data_type, fetch_func, ttl_minutes=60):
     return data
 
 
+def fetch_daily_series(ticker, asset_type="stock"):
+    def fetch():
+        if asset_type == "crypto":
+            data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
+            return data.get("Time Series (Digital Currency Daily)", {})
+        else:
+            data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
+            return data.get("Time Series (Daily)", {})
+    return get_cached_or_fetch(ticker, f"daily_series_{asset_type}", fetch, ttl_minutes=360)
+
+
+def build_history(ticker, series, asset_type="stock"):
+    if not series:
+        return {"error": "Sin historial"}
+    history = []
+    for d, v in sorted(series.items(), reverse=True)[:30]:
+        if asset_type == "crypto":
+            entry = {"open": None, "high": None, "low": None, "close": None, "volume": None}
+            for key, val in v.items():
+                k = key.lower()
+                if "open" in k: entry["open"] = val
+                elif "high" in k: entry["high"] = val
+                elif "low" in k: entry["low"] = val
+                elif "close" in k: entry["close"] = val
+                elif "volume" in k: entry["volume"] = val
+            history.append({"date": d, **entry})
+        else:
+            history.append({
+                "date": d,
+                "open": v["1. open"],
+                "high": v["2. high"],
+                "low": v["3. low"],
+                "close": v["4. close"],
+                "volume": v["5. volume"],
+            })
+    return {"ticker": ticker, "history": history}
+
+
+def build_recommendation(ticker, series, asset_type="stock"):
+    if not series:
+        return {"error": "Sin datos"}
+    closes = []
+    for v in series.values():
+        if asset_type == "crypto":
+            for key, val in v.items():
+                if "close" in key.lower():
+                    closes.append(float(val))
+                    break
+        else:
+            closes.append(float(v["4. close"]))
+    if not closes:
+        return {"error": "No se pudieron procesar los precios de cierre"}
+    first, last = closes[0], closes[-1]
+    change_pct = round(((last - first) / first) * 100, 2)
+    avg_30 = sum(closes) / len(closes)
+    avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
+    if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
+        signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
+    elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
+        signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
+    elif abs(change_pct) <= 3:
+        signal, reason = "MANTENER", "Mercado lateral sin señal clara"
+    elif change_pct > 0 and last > avg_30:
+        signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
+    else:
+        signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
+    return {
+        "ticker": ticker,
+        "price": last,
+        "change_percent_30d": change_pct,
+        "signal": signal,
+        "reason": reason,
+    }
+
+
 api = Blueprint('api', __name__)
 CORS(api)
 
@@ -122,6 +197,26 @@ def get_profile(current_user):
     return jsonify(current_user.serialize()), 200
 
 
+@api.route('/profile', methods=['PUT'])
+@token_required
+def update_profile(current_user):
+    body = request.get_json()
+    if not body:
+        return jsonify({"error": "No se proporcionaron datos"}), 400
+
+    if "full_name" in body:
+        current_user.full_name = body["full_name"].strip()
+    if "company" in body:
+        current_user.company = body["company"].strip()
+    if "avatar_url" in body:
+        current_user.avatar_url = body["avatar_url"].strip()
+
+    try:
+        db.session.commit()
+        return jsonify({"message": "Perfil actualizado", "user": current_user.serialize()}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 # IA
 
 genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
@@ -249,8 +344,6 @@ def delete_bank_from_wallet(current_user, wallet_id):
     db.session.commit()
     return jsonify({"message": f"Banco {bank_record.bank_name} eliminado de la cartera"}), 200
 
-# FAVORITOS
-
 
 @api.route('/favorite', methods=['GET'])
 @token_required
@@ -292,8 +385,6 @@ def delete_favorite(current_user, favorite_id):
     db.session.commit()
     return jsonify({"message": "Favorito eliminado correctamente"}), 200
 
-# NOTICIAS
-
 
 def get_external_news_data(endpoint: str, params: dict):
     full_url = f"{NEWS_API_BASE_URL}{endpoint}"
@@ -326,8 +417,6 @@ def get_news():
     except Exception as e:
         print(f"ERROR EXACTO EN /NEWS: {str(e)}")
         return jsonify({"error": f"No se pudieron cargar las noticias externas. Motivo: {str(e)}"}), 500
-    
-#  ACCIONES
 
 
 @api.route('/stocks/quote', methods=['GET'])
@@ -350,7 +439,7 @@ def stock_quote():
             "low": q.get("04. low"),
             "volume": q.get("06. volume")
         }
-    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=60)
+    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=360)
     if "error" in data:
         return jsonify(data), 404
     return jsonify(data), 200
@@ -361,22 +450,9 @@ def stock_history():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-
-    def fetch():
-        data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-        series = data.get("Time Series (Daily)", {})
-        if not series:
-            return {"error": "Sin historial"}
-        return {
-            "ticker": ticker,
-            "history": [{"date": d, "open": v["1. open"], "high": v["2. high"],
-                         "low": v["3. low"], "close": v["4. close"], "volume": v["5. volume"]}
-                        for d, v in sorted(series.items(), reverse=True)[:30]]
-        }
-    data = get_cached_or_fetch(ticker, "history", fetch, ttl_minutes=1440)
-    if "error" in data:
-        return jsonify(data), 404
-    return jsonify(data), 200
+    series = fetch_daily_series(ticker, asset_type="stock")
+    data = build_history(ticker, series, asset_type="stock")
+    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
 
 
 @api.route('/stocks/recommendation', methods=['GET'])
@@ -384,36 +460,9 @@ def stock_recommendation():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-
-    def fetch():
-        data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-        series = data.get("Time Series (Daily)", {})
-        if not series:
-            return {"error": "Sin datos"}
-        closes = [float(v["4. close"]) for v in series.values()]
-        first, last = closes[0], closes[-1]
-        change_pct = round(((last - first) / first) * 100, 2)
-        avg_30 = sum(closes) / len(closes)
-        avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
-        if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
-            signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
-        elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
-            signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
-        elif abs(change_pct) <= 3:
-            signal, reason = "MANTENER", "Mercado lateral sin señal clara"
-        elif change_pct > 0 and last > avg_30:
-            signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
-        else:
-            signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
-        return {"ticker": ticker, "price": last,
-                "change_percent_30d": change_pct,
-                "signal": signal, "reason": reason}
-    data = get_cached_or_fetch(ticker, "recommendation", fetch, ttl_minutes=60)
-    if "error" in data:
-        return jsonify(data), 404
-    return jsonify(data), 200
-
-#  FONDOS / ETFs
+    series = fetch_daily_series(ticker, asset_type="stock")
+    data = build_recommendation(ticker, series, asset_type="stock")
+    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
 
 
 @api.route('/funds/quote', methods=['GET'])
@@ -436,7 +485,7 @@ def fund_quote():
             "low": q.get("04. low"),
             "volume": q.get("06. volume")
         }
-    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=60)
+    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=360)
     if "error" in data:
         return jsonify(data), 404
     return jsonify(data), 200
@@ -447,22 +496,9 @@ def fund_history():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-
-    def fetch():
-        data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-        series = data.get("Time Series (Daily)", {})
-        if not series:
-            return {"error": "Sin historial"}
-        return {
-            "ticker": ticker,
-            "history": [{"date": d, "open": v["1. open"], "high": v["2. high"],
-                         "low": v["3. low"], "close": v["4. close"], "volume": v["5. volume"]}
-                        for d, v in sorted(series.items(), reverse=True)[:30]]
-        }
-    data = get_cached_or_fetch(ticker, "history", fetch, ttl_minutes=1440)
-    if "error" in data:
-        return jsonify(data), 404
-    return jsonify(data), 200
+    series = fetch_daily_series(ticker, asset_type="stock")
+    data = build_history(ticker, series, asset_type="stock")
+    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
 
 
 @api.route('/funds/recommendation', methods=['GET'])
@@ -470,36 +506,9 @@ def fund_recommendation():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-
-    def fetch():
-        data = av_get("TIME_SERIES_DAILY", ticker, outputsize="compact")
-        series = data.get("Time Series (Daily)", {})
-        if not series:
-            return {"error": "Sin datos"}
-        closes = [float(v["4. close"]) for v in series.values()]
-        first, last = closes[0], closes[-1]
-        change_pct = round(((last - first) / first) * 100, 2)
-        avg_30 = sum(closes) / len(closes)
-        avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
-        if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
-            signal, reason = "COMPRAR", "Tendencia alcista fuerte en el fondo"
-        elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
-            signal, reason = "VENDER", "Tendencia bajista fuerte en el fondo"
-        elif abs(change_pct) <= 3:
-            signal, reason = "MANTENER", "Fondo lateral sin señal clara"
-        elif change_pct > 0 and last > avg_30:
-            signal, reason = "MANTENER", "Ligera tendencia positiva, monitorear"
-        else:
-            signal, reason = "MANTENER", "Sin tendencia definida"
-        return {"ticker": ticker, "price": last,
-                "change_percent_30d": change_pct,
-                "signal": signal, "reason": reason}
-    data = get_cached_or_fetch(ticker, "recommendation", fetch, ttl_minutes=60)
-    if "error" in data:
-        return jsonify(data), 404
-    return jsonify(data), 200
-
-#  CRIPTOMONEDAS
+    series = fetch_daily_series(ticker, asset_type="stock")
+    data = build_recommendation(ticker, series, asset_type="stock")
+    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
 
 
 @api.route('/crypto/quote', methods=['GET'])
@@ -527,7 +536,7 @@ def crypto_quote():
             elif "volume" in key_lower:
                 extracted["volume"] = value
         return {"ticker": ticker, **extracted}
-    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=60)
+    data = get_cached_or_fetch(ticker, "quote", fetch, ttl_minutes=360)
     if "error" in data:
         return jsonify(data), 404
     return jsonify(data), 200
@@ -538,34 +547,9 @@ def crypto_history():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
-
-    def fetch():
-        data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
-        series = data.get("Time Series (Digital Currency Daily)", {})
-        if not series:
-            return {"error": "Sin historial"}
-        history = []
-        for d, v in sorted(series.items(), reverse=True)[:30]:
-            extracted = {"open": None, "high": None,
-                         "low": None, "close": None, "volume": None}
-            for key, val in v.items():
-                key_lower = key.lower()
-                if "open" in key_lower:
-                    extracted["open"] = val
-                elif "high" in key_lower:
-                    extracted["high"] = val
-                elif "low" in key_lower:
-                    extracted["low"] = val
-                elif "close" in key_lower:
-                    extracted["close"] = val
-                elif "volume" in key_lower:
-                    extracted["volume"] = val
-            history.append({"date": d, **extracted})
-        return {"ticker": ticker, "history": history}
-    data = get_cached_or_fetch(ticker, "history", fetch, ttl_minutes=1440)
-    if "error" in data:
-        return jsonify(data), 404
-    return jsonify(data), 200
+    series = fetch_daily_series(ticker, asset_type="crypto")
+    data = build_history(ticker, series, asset_type="crypto")
+    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
 
 
 @api.route('/crypto/recommendation', methods=['GET'])
@@ -573,38 +557,206 @@ def crypto_recommendation():
     ticker = request.args.get("ticker", "").strip().upper()
     if not ticker:
         return jsonify({"error": "Falta 'ticker'"}), 400
+    series = fetch_daily_series(ticker, asset_type="crypto")
+    data = build_recommendation(ticker, series, asset_type="crypto")
+    return (jsonify(data), 404) if "error" in data else (jsonify(data), 200)
+
+# YAHOO FINANCE
+
+import yfinance as yf
+
+@api.route('/search', methods=['GET'])
+def search_ticker():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "Falta el parámetro 'q'"}), 400
+    try:
+        resultados = yf.Search(q, max_results=8)
+        quotes = resultados.quotes
+        return jsonify([{
+            "ticker": r.get("symbol"),
+            "name":   r.get("longname") or r.get("shortname"),
+            "type":   r.get("quoteType", "").lower(),
+        } for r in quotes if r.get("symbol")]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api.route('/stocks/info', methods=['GET'])
+def stock_info():
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "Falta 'ticker'"}), 400
 
     def fetch():
-        data = av_get("DIGITAL_CURRENCY_DAILY", ticker, market="USD")
-        series = data.get("Time Series (Digital Currency Daily)", {})
-        if not series:
-            return {"error": "Sin datos"}
-        closes = []
-        for v in series.values():
-            for key, val in v.items():
-                if "close" in key.lower():
-                    closes.append(float(val))
-                    break
-        if not closes:
-            return {"error": "No se pudieron procesar los precios de cierre"}
-        first, last = closes[0], closes[-1]
-        change_pct = round(((last - first) / first) * 100, 2)
-        avg_30 = sum(closes) / len(closes)
-        avg_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
-        if change_pct > 5 and last > avg_30 and avg_7 > avg_30:
-            signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
-        elif change_pct < -5 and last < avg_30 and avg_7 < avg_30:
-            signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
-        elif abs(change_pct) <= 3:
-            signal, reason = "MANTENER", "Mercado lateral sin señal clara"
-        elif change_pct > 0 and last > avg_30:
-            signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
-        else:
-            signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
-        return {"ticker": ticker, "price": last,
+        try:
+            t    = yf.Ticker(ticker)
+            info = t.info
+            return {
+                "ticker":          ticker,
+                "name":            info.get("longName"),
+                "price":           info.get("currentPrice"),
+                "change_percent":  round(info.get("regularMarketChangePercent", 0), 2),
+                "sector":          info.get("sector"),
+                "industry":        info.get("industry"),
+                "market_cap":      info.get("marketCap"),
+                "pe_ratio":        info.get("trailingPE"),
+                "eps":             info.get("trailingEps"),
+                "beta":            info.get("beta"),
+                "week_52_high":    info.get("fiftyTwoWeekHigh"),
+                "week_52_low":     info.get("fiftyTwoWeekLow"),
+                "avg_volume":      info.get("averageVolume"),
+                "description":     info.get("longBusinessSummary"),
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    data = get_cached_or_fetch(ticker, "yf_info", fetch, ttl_minutes=360)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
+
+
+@api.route('/stocks/yf_recommendation', methods=['GET'])
+def stock_yf_recommendation():
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "Falta 'ticker'"}), 400
+
+    def fetch():
+        try:
+            t       = yf.Ticker(ticker)
+            info    = t.info
+            hist    = t.history(period="1mo")
+            if hist.empty:
+                return {"error": "Sin historial"}
+            closes       = hist["Close"].tolist()
+            price        = closes[-1]
+            avg_30       = sum(closes) / len(closes)
+            avg_7        = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
+            change_pct   = round(((closes[-1] - closes[0]) / closes[0]) * 100, 2)
+            if change_pct > 5 and price > avg_30 and avg_7 > avg_30:
+                signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
+            elif change_pct < -5 and price < avg_30 and avg_7 < avg_30:
+                signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
+            elif abs(change_pct) <= 3:
+                signal, reason = "MANTENER", "Mercado lateral sin señal clara"
+            elif change_pct > 0 and price > avg_30:
+                signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
+            else:
+                signal, reason = "MANTENER", "Sin suficiente consistencia en la tendencia"
+            return {
+                "ticker":            ticker,
+                "price":             round(price, 2),
                 "change_percent_30d": change_pct,
-                "signal": signal, "reason": reason}
-    data = get_cached_or_fetch(ticker, "recommendation", fetch, ttl_minutes=60)
+                "signal":            signal,
+                "reason":            reason,
+                "sector":            info.get("sector"),
+                "market_cap":        info.get("marketCap"),
+                "week_52_high":      info.get("fiftyTwoWeekHigh"),
+                "week_52_low":       info.get("fiftyTwoWeekLow"),
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    data = get_cached_or_fetch(ticker, "yf_recommendation", fetch, ttl_minutes=360)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
+
+
+@api.route('/funds/yf_recommendation', methods=['GET'])
+def fund_yf_recommendation():
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "Falta 'ticker'"}), 400
+
+    def fetch():
+        try:
+            t     = yf.Ticker(ticker)
+            info  = t.info
+            hist  = t.history(period="1mo")
+            if hist.empty:
+                return {"error": "Sin historial"}
+            closes     = hist["Close"].tolist()
+            price      = closes[-1]
+            avg_30     = sum(closes) / len(closes)
+            avg_7      = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
+            change_pct = round(((closes[-1] - closes[0]) / closes[0]) * 100, 2)
+            if change_pct > 5 and price > avg_30 and avg_7 > avg_30:
+                signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
+            elif change_pct < -5 and price < avg_30 and avg_7 < avg_30:
+                signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
+            elif abs(change_pct) <= 3:
+                signal, reason = "MANTENER", "Mercado lateral sin señal clara"
+            elif change_pct > 0 and price > avg_30:
+                signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
+            else:
+                signal, reason = "MANTENER", "Sin tendencia definida"
+            return {
+                "ticker":             ticker,
+                "price":              round(price, 2),
+                "change_percent_30d": change_pct,
+                "signal":             signal,
+                "reason":             reason,
+                "sector":             info.get("category") or info.get("sector"),
+                "market_cap":         info.get("totalAssets") or info.get("marketCap"),
+                "week_52_high":       info.get("fiftyTwoWeekHigh"),
+                "week_52_low":        info.get("fiftyTwoWeekLow"),
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    data = get_cached_or_fetch(ticker, "yf_recommendation", fetch, ttl_minutes=360)
+    if "error" in data:
+        return jsonify(data), 404
+    return jsonify(data), 200
+
+
+@api.route('/crypto/yf_recommendation', methods=['GET'])
+def crypto_yf_recommendation():
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "Falta 'ticker'"}), 400
+
+    def fetch():
+        try:
+            yf_ticker = ticker if "-" in ticker else f"{ticker}-USD"
+            t     = yf.Ticker(yf_ticker)
+            info  = t.info
+            hist  = t.history(period="1mo")
+            if hist.empty:
+                return {"error": "Sin historial"}
+            closes     = hist["Close"].tolist()
+            price      = closes[-1]
+            avg_30     = sum(closes) / len(closes)
+            avg_7      = sum(closes[-7:]) / 7 if len(closes) >= 7 else avg_30
+            change_pct = round(((closes[-1] - closes[0]) / closes[0]) * 100, 2)
+            if change_pct > 5 and price > avg_30 and avg_7 > avg_30:
+                signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
+            elif change_pct < -5 and price < avg_30 and avg_7 < avg_30:
+                signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
+            elif abs(change_pct) <= 3:
+                signal, reason = "MANTENER", "Mercado lateral sin señal clara"
+            elif change_pct > 0 and price > avg_30:
+                signal, reason = "MANTENER", "Leve tendencia alcista, esperar confirmación"
+            else:
+                signal, reason = "MANTENER", "Sin tendencia definida"
+            return {
+                "ticker":             yf_ticker,
+                "price":              round(price, 2),
+                "change_percent_30d": change_pct,
+                "signal":             signal,
+                "reason":             reason,
+                "sector":             "Cryptocurrency",
+                "market_cap":         info.get("marketCap"),
+                "week_52_high":       info.get("fiftyTwoWeekHigh"),
+                "week_52_low":        info.get("fiftyTwoWeekLow"),
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    data = get_cached_or_fetch(ticker, "yf_crypto_rec", fetch, ttl_minutes=360)
     if "error" in data:
         return jsonify(data), 404
     return jsonify(data), 200

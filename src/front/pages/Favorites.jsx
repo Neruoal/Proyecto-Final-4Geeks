@@ -90,8 +90,11 @@ export function Favorites() {
   return (
     <div className="favorites-page">
 
-      <Sidebar email={profile?.email ?? ""} />
-
+<Sidebar
+  email={profile?.email ?? ""}
+  fullName={profile?.full_name ?? ""}
+  avatarUrl={profile?.avatar_url ?? ""}
+/>
       <div className="favorites-main">
 
         <header className="favorites-topbar">

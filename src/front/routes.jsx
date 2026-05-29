@@ -13,7 +13,7 @@ import { Register } from "./pages/Register";
 import { Dashboard } from "./pages/Dashboard";
 import { Sidebar} from "./components/Sidebar";
 import { Favorites } from "./pages/Favorites";
-
+import { Profile } from "./pages/Profile";
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
@@ -31,6 +31,7 @@ export const router = createBrowserRouter(
           {/* Con layout */}
           <Route path="/"          element={<Dashboard />} />
           <Route path="/favorites" element={<Favorites />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/demo"      element={<Demo />} />
           <Route path="/single/:theId" element={<Single />} />
