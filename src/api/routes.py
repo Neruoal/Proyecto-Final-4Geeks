@@ -647,7 +647,6 @@ def crypto_yf_recommendation():
 
     def fetch():
         try:
-            # yfinance necesita el formato BTC-USD, si pasan BTC lo convertimos
             yf_ticker = ticker if "-" in ticker else f"{ticker}-USD"
             t     = yf.Ticker(yf_ticker)
             info  = t.info
