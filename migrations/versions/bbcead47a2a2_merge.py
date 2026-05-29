@@ -1,7 +1,7 @@
 """merge
 
 Revision ID: bbcead47a2a2
-Revises: e377916cf7e8, f1400d3edc79
+Revises: e377916cf7e8
 Create Date: 2026-05-29 09:28:07.230980
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'bbcead47a2a2'
-down_revision = ('e377916cf7e8', 'f1400d3edc79')
+down_revision = 'e377916cf7e8'
 branch_labels = None
 depends_on = None
 
