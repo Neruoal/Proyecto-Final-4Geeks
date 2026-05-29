@@ -14,13 +14,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import yfinance as yf
 from google import genai
 
-# Inicialización obligatoria
 load_dotenv()
 
-# Configuración de Gemini (Una sola API Key)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
-
-# --- AQUI VAN TUS CONSTANTES DE NOTICIAS ---
 NEWS_API_BASE_URL = os.getenv("NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
 NEWS_API_TOKEN = os.getenv("NEWS_API_TOKEN", "")
 
@@ -59,18 +55,14 @@ def get_market_data(ticker, data_type, fetch_func, ttl_minutes=360):
     """
     cached = MarketCache.query.filter_by(ticker=ticker, data_type=data_type).first()
     
-    # Retornar caché si es válido
     if cached and not cached.is_expired():
         return json.loads(cached.response_data)
     
-    # Obtener datos nuevos usando la función que le pasemos
     data = fetch_func()
     
-    # Si hay error en la función, devolver sin guardar
     if "error" in data:
         return data
         
-    # Guardar en caché
     response_json = json.dumps(data)
     expires = dt.datetime.utcnow() + dt.timedelta(minutes=ttl_minutes)
     
