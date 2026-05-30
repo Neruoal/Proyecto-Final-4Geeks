@@ -17,8 +17,7 @@ from google import genai
 load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
-NEWS_API_BASE_URL = os.getenv("NEWS_API_BASE_URL", "https://api.marketaux.com/v1/news")
-NEWS_API_TOKEN = os.getenv("NEWS_API_TOKEN", "")
+NEWS_API_KEY   = os.getenv("NEWS_API_KEY", "").strip()
 
 api = Blueprint('api', __name__)
 CORS(api)
@@ -26,8 +25,6 @@ CORS(api)
 def get_client():
     return genai.Client(api_key=GOOGLE_API_KEY)
 
-
-# ── DECORADORES Y UTILS ───────────────────────────────────────────────────────
 
 def token_required(f):
     @wraps(f)
@@ -47,64 +44,31 @@ def token_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
-# ── SISTEMA DE CACHÉ CENTRALIZADO ─────────────────────────────────────────────
+
+# ── CACHÉ ─────────────────────────────────────────────────────────────────────
 
 def get_market_data(ticker, data_type, fetch_func, ttl_minutes=360):
-    """
-    Gestiona el caché para cualquier llamada a Yahoo Finance.
-    """
     cached = MarketCache.query.filter_by(ticker=ticker, data_type=data_type).first()
-    
     if cached and not cached.is_expired():
         return json.loads(cached.response_data)
-    
     data = fetch_func()
-    
     if "error" in data:
         return data
-        
     response_json = json.dumps(data)
     expires = dt.datetime.utcnow() + dt.timedelta(minutes=ttl_minutes)
-    
     if cached:
         cached.response_data = response_json
-        cached.created_at = dt.datetime.utcnow()
-        cached.expires_at = expires
+        cached.created_at    = dt.datetime.utcnow()
+        cached.expires_at    = expires
     else:
-        new_cache = MarketCache(ticker=ticker, data_type=data_type, 
+        new_cache = MarketCache(ticker=ticker, data_type=data_type,
                                 response_data=response_json, expires_at=expires)
         db.session.add(new_cache)
-    
     try:
         db.session.commit()
     except Exception:
         db.session.rollback()
-        
     return data
-
-# ── FUNCIÓN DE CÁLCULO ESTÁNDAR PARA YAHOO ───────────────────────────────────
-
-def calculate_yf_metrics(ticker, hist):
-    """Lógica unificada para calcular señales basadas en histórico de Yahoo"""
-    closes = hist["Close"].tolist()
-    price = float(closes[-1])
-    avg_30 = sum(closes) / len(closes)
-    avg_7 = sum(closes[-7:]) / 7
-    change_pct = round(((closes[-1] - closes[0]) / closes[0]) * 100, 2)
-    
-    if change_pct > 5 and price > avg_30 and avg_7 > avg_30:
-        signal, reason = "COMPRAR", "Tendencia alcista fuerte, precio sobre media 30d y 7d"
-    elif change_pct < -5 and price < avg_30 and avg_7 < avg_30:
-        signal, reason = "VENDER", "Tendencia bajista fuerte, precio bajo media 30d y 7d"
-    elif abs(change_pct) <= 3:
-        signal, reason = "MANTENER", "Mercado lateral sin señal clara"
-    else:
-        signal, reason = "MANTENER", "Leve tendencia o sin consistencia clara"
-        
-    return {
-        "ticker": ticker, "price": round(price, 2), "change_percent_30d": change_pct,
-        "signal": signal, "reason": reason
-    }
 
 
 # ── AUTH ─────────────────────────────────────────────────────────────────────
@@ -165,7 +129,7 @@ def update_profile(current_user):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-    
+
 
 # ── IA ────────────────────────────────────────────────────────────────────────
 
@@ -173,36 +137,21 @@ def update_profile(current_user):
 @token_required
 def ask_ai(current_user):
     data = request.get_json()
-    
     if not data or "question" not in data:
         return jsonify({"message": "La pregunta es obligatoria"}), 400
 
     pregunta = data.get("question")
-    ticker = data.get("ticker", "").strip().upper()
+    ticker   = data.get("ticker", "").strip().upper()
 
-    print("TICKER RECIBIDO:", ticker)
-
-    # ── YAHOO CONTEXTO ───────────────────────────
     contexto_yahoo = ""
-
     if ticker:
         try:
-            t = yf.Ticker(ticker)
+            t    = yf.Ticker(ticker)
             hist = t.history(period="5d")
-
-            price = None
-            if not hist.empty:
-                price = float(hist["Close"].iloc[-1])
-
-            info = {}
-            try:
-                info = t.info or {}
-            except:
-                info = {}
-
-            print("INFO KEYS:", list(info.keys()) if info else [])
-            print("PRICE (history):", price)
-
+            price = float(hist["Close"].iloc[-1]) if not hist.empty else None
+            info  = {}
+            try: info = t.info or {}
+            except: pass
             if not price:
                 contexto_yahoo = f"[SIN DATOS DE PRECIO PARA {ticker}]"
             else:
@@ -213,13 +162,8 @@ Precio actual: {price}
 Sector: {info.get('sector', 'N/A')}
 Resumen: {(info.get('longBusinessSummary') or '')[:300]}
 """
-
         except Exception as e:
-            print("ERROR YAHOO:", e)
             contexto_yahoo = f"[ERROR YAHOO FINANCE: {str(e)}]"
-
-    print("=== CONTEXTO FINAL ===")
-    print(contexto_yahoo)
 
     prompt_completo = f"""
 Eres un analista financiero tipo terminal de trading.
@@ -229,9 +173,9 @@ REGLAS:
 - Puedes completar con conocimiento general del mercado
 - No inventes números
 - No bloquees la respuesta por falta de datos
-- Siempre da una recomendación útil-
+- Siempre da una recomendación útil
 - Responde como una persona normal, no como una IA.
-- maximo 8 lineas de respuesta, se breve y directo al punto.
+- Máximo 8 líneas de respuesta, sé breve y directo al punto.
 
 DATOS:
 {contexto_yahoo}
@@ -239,24 +183,18 @@ DATOS:
 PREGUNTA:
 {pregunta}
 """
-    
     try:
-        client = get_client()
+        client   = get_client()
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt_completo
         )
         return jsonify({"answer": response.text}), 200
-
     except Exception as e:
-        print(f"Error generando respuesta de IA: {e}")
-        return jsonify({
-            "error": f"Error al procesar tu consulta con la IA: {str(e)}"
-        }), 500
-        
-    
+        return jsonify({"error": f"Error al procesar tu consulta con la IA: {str(e)}"}), 500
 
-# ── SECCIÓN: WALLET (GESTIÓN DE BANCOS) ───────────────────────────────────────
+
+# ── WALLET ────────────────────────────────────────────────────────────────────
 
 @api.route('/wallet', methods=['GET'])
 @token_required
@@ -268,13 +206,11 @@ def get_wallet(current_user):
 @api.route('/wallet', methods=['POST'])
 @token_required
 def add_bank(current_user):
-    data = request.get_json()
+    data      = request.get_json()
     bank_name = data.get("bank_name", "").strip().upper()
     liquidity = data.get("liquidity")
-
     if not bank_name or liquidity is None:
         return jsonify({"error": "Faltan datos"}), 400
-    
     new_bank = Wallet(user_id=current_user.id, bank_name=bank_name, liquidity=float(liquidity))
     db.session.add(new_bank)
     db.session.commit()
@@ -284,17 +220,14 @@ def add_bank(current_user):
 @api.route('/wallet', methods=['PUT'])
 @token_required
 def update_bank(current_user):
-    data = request.get_json()
-    bank_name = data.get("bank_name", "").strip().upper()
+    data          = request.get_json()
+    bank_name     = data.get("bank_name", "").strip().upper()
     new_liquidity = data.get("liquidity")
-
     if not bank_name or new_liquidity is None:
         return jsonify({"error": "Faltan datos"}), 400
-
     bank = Wallet.query.filter_by(user_id=current_user.id, bank_name=bank_name).first()
     if not bank:
         return jsonify({"error": "Banco no encontrado"}), 404
-    
     bank.liquidity = float(new_liquidity)
     db.session.commit()
     return jsonify({"message": "Saldo actualizado", "bank": bank.serialize()}), 200
@@ -304,14 +237,11 @@ def update_bank(current_user):
 @token_required
 def delete_bank(current_user, id):
     bank = Wallet.query.filter_by(id=id, user_id=current_user.id).first()
-    
     if not bank:
         return jsonify({"error": "Banco no encontrado o no autorizado"}), 404
-    
     db.session.delete(bank)
     db.session.commit()
-    
-    return jsonify({"message": f"Banco eliminado correctamente"}), 200
+    return jsonify({"message": "Banco eliminado correctamente"}), 200
 
 
 # ── FAVORITOS ─────────────────────────────────────────────────────────────────
@@ -355,37 +285,39 @@ def delete_favorite(current_user, favorite_id):
     return jsonify({"message": "Favorito eliminado correctamente"}), 200
 
 
-# ── NOTICIAS ──────────────────────────────────────────────────────────────────
-
-def get_external_news_data(endpoint: str, params: dict):
-    full_url = f"{NEWS_API_BASE_URL}{endpoint}"
-    params['api_token'] = NEWS_API_TOKEN
-    try:
-        response = requests.get(full_url, params=params)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        raise Exception("No se pudo conectar con la API de noticias.")
-
+# ── NOTICIAS (NewsAPI) ────────────────────────────────────────────────────────
 
 @api.route('/news', methods=['GET'])
 def get_news():
+    page = request.args.get("page", 1, type=int)
     try:
-        params = {"language": "es", "limit": 10}
-        data   = get_external_news_data("/all", params)
+        resp = requests.get(
+            "https://newsapi.org/v2/everything",
+            params={
+                "q":        "bolsa finanzas mercado acciones inversión",
+                "language": "es",
+                "pageSize": 10,
+                "page":     page,
+                "sortBy":   "publishedAt",
+                "apiKey":   NEWS_API_KEY,
+            }
+        )
+        resp.raise_for_status()
+        data      = resp.json()
+        total     = data.get("totalResults", 0)
         news_list = []
-        for item in data.get("data", []):
+        for item in data.get("articles", []):
             news_list.append({
-                "id":      item.get("uuid") or f"api_{item.get('id', 'unknown')}",
+                "id":      item.get("url"),
                 "title":   item.get("title"),
-                "content": item.get("description") or item.get("snippet"),
-                "source":  item.get("source"),
-                "url":     item.get("url")
+                "content": item.get("description"),
+                "source":  item.get("source", {}).get("name"),
+                "url":     item.get("url"),
+                "image":   item.get("urlToImage"),
             })
-        return jsonify(news_list), 200
+        return jsonify({"articles": news_list, "total": total, "page": page}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 # ── YAHOO FINANCE ─────────────────────────────────────────────────────────────
 
