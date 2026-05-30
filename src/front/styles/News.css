@@ -1,4 +1,4 @@
-/* ── News page ───────────────────────────────────────── */
+
 .news-page {
   display: flex;
   min-height: 100vh;
@@ -15,7 +15,6 @@
   min-height: 100vh;
 }
 
-/* ── Topbar ──────────────────────────────────────────── */
 .news-topbar {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -39,7 +38,7 @@
   margin: 0;
 }
 
-/* ── Content ─────────────────────────────────────────── */
+
 .news-content {
   flex: 1;
   padding: 24px 28px;
@@ -55,7 +54,7 @@
   margin-bottom: 12px;
 }
 
-/* ── Cards ───────────────────────────────────────────── */
+
 .news-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -70,7 +69,7 @@
 
 .news-card:hover { opacity: 0.85; }
 
-/* Featured — fila completa, imagen lateral */
+
 .news-card.featured {
   flex-direction: row;
   margin-bottom: 12px;
@@ -94,14 +93,13 @@
   -webkit-line-clamp: 4;
 }
 
-/* Grid resto */
 .news-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
 
-/* Imagen real */
+
 .news-card-img {
   width: 100%;
   height: 160px;
@@ -110,7 +108,7 @@
   background: #f0f2f5;
 }
 
-/* ── Placeholders ────────────────────────────────────── */
+
 .news-ph {
   width: 100%;
   height: 160px;
@@ -122,7 +120,6 @@
   flex-shrink: 0;
 }
 
-/* Placeholder 1 — círculo dorado sobre negro */
 .news-ph-1 { background: #1e2025; }
 
 .news-ph-1 .ph-lines {
@@ -158,7 +155,6 @@
   background: #e8a940;
 }
 
-/* Placeholder 2 — barras + línea de gráfico */
 .news-ph-2 { background: #f5f3ef; }
 
 .news-ph-2 svg {
@@ -186,7 +182,6 @@
 
 .news-ph-2 .ph-bar.hi { opacity: 0.2; }
 
-/* Placeholder 3 — grid de celdas sobre negro */
 .news-ph-3 { background: #1e2025; }
 
 .news-ph-3 .ph-grid {
@@ -206,7 +201,7 @@
 .news-ph-3 .ph-cell.lit { background: rgba(232,169,64,0.22); }
 .news-ph-3 .ph-cell.mid { background: rgba(255,255,255,0.11); }
 
-/* ── Card body ───────────────────────────────────────── */
+
 .news-card-body {
   padding: 14px;
   display: flex;
@@ -251,7 +246,6 @@
   gap: 4px;
 }
 
-/* ── Empty / Error ───────────────────────────────────── */
 .news-empty {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -273,7 +267,6 @@
   margin: 0;
 }
 
-/* ── Loading ─────────────────────────────────────────── */
 .news-loading {
   display: flex;
   align-items: center;
