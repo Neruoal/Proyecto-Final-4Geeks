@@ -38,13 +38,14 @@ const fmtCap = (n) => {
 export function AssetCard({
   ticker,
   name,
-  type       = "stock",
-  favoriteId = null,
+  type          = "stock",
+  favoriteId    = null,
   onFavToggle,
-  showSignal = true,
-  delay      = 0,
+  showSignal    = true,
+  delay         = 0,
+  onSignalLoaded,
 }) {
-  const endpoint = (type === "fund" || type === "etf") ? "funds" : "stocks";
+  const endpoint = (type === "fund" || type === "etf") ? "funds" : type === "crypto" ? "crypto" : "stocks";
   const cacheKey = `yf_${endpoint}_${ticker}`;
 
   const [data,     setData]     = useState(null);
@@ -61,6 +62,7 @@ export function AssetCard({
     const cached = getCached(cacheKey);
     if (cached) {
       setData(cached);
+      onSignalLoaded?.(ticker, cached.signal);
       setLoading(false);
       return;
     }
@@ -74,8 +76,10 @@ export function AssetCard({
         if (json.error) throw new Error(json.error);
         setData(json);
         setCache(cacheKey, json);
+        onSignalLoaded?.(ticker, json.signal);
       } catch (e) {
         setError(e.message || "Error al cargar datos");
+        onSignalLoaded?.(ticker, null);
       } finally {
         setLoading(false);
       }
@@ -202,7 +206,7 @@ export function AssetCard({
       )}
 
       {!loading && !error && showSignal && data?.signal && (
-        <div className={`asset-card-signal ${signalClass[data.signal] ?? "signal-hold"}`}>
+        <div className={`asset-card-signal ${signalClass[data.signal] ?? "signal-hold"}`} style={{ marginTop: "auto" }}>
           <span>{signalIcon[data.signal] ?? "→"} {data.signal}</span>
           <span className="signal-reason">· {data.reason}</span>
         </div>

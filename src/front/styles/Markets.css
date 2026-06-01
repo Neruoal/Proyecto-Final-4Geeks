@@ -1,0 +1,137 @@
+.markets-page {
+  display: flex;
+  min-height: 100vh;
+  font-family: 'DM Sans', sans-serif;
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.markets-main {
+  flex: 1;
+  margin-left: 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.markets-topbar {
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 14px 28px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.markets-topbar h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.markets-topbar p {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.markets-content {
+  flex: 1;
+  padding: 24px 28px;
+  background: #f3f4f6;
+}
+
+.markets-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.filter-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.filter-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #6b7280;
+  margin-right: 2px;
+}
+
+.filter-btn {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.filter-btn:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.filter-btn.active {
+  background: #1f2937;
+  border-color: #1f2937;
+  color: #ffffff;
+}
+
+.filter-divider {
+  width: 1px;
+  height: 20px;
+  background: #e5e7eb;
+  margin: 0 4px;
+}
+
+.filter-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.markets-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.section-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7280;
+  margin-bottom: 12px;
+}
+
+.markets-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px 24px;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.markets-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 240px;
+  color: #6b7280;
+  font-size: 0.85rem;
+  gap: 10px;
+}

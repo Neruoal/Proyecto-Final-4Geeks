@@ -15,6 +15,7 @@ import { Sidebar} from "./components/Sidebar";
 import { Favorites } from "./pages/Favorites";
 import { Profile } from "./pages/Profile";
 import { News } from "./pages/News";
+import { Markets } from "./pages/Markets";
 
 
 export const router = createBrowserRouter(
@@ -35,6 +36,7 @@ export const router = createBrowserRouter(
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/markets" element={<Markets />} />
           <Route path="/news" element={<News />} />
           <Route path="/demo"      element={<Demo />} />
           <Route path="/single/:theId" element={<Single />} />
