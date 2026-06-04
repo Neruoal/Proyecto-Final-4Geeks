@@ -16,6 +16,8 @@ import { Favorites } from "./pages/Favorites";
 import { Profile } from "./pages/Profile";
 import { News } from "./pages/News";
 import { Markets } from "./pages/Markets";
+import { AIChat } from "./components/AIChat";
+
 
 
 export const router = createBrowserRouter(

@@ -215,6 +215,10 @@ def add_bank(current_user):
     db.session.add(new_bank)
     db.session.commit()
     return jsonify({"message": "Banco añadido", "bank": new_bank.serialize()}), 201
+{
+  "bank_name": "Santander",
+  "liquidity": 1000
+}
 
 
 @api.route('/wallet', methods=['PUT'])
