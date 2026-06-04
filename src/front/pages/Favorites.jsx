@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
 import { AssetCard } from "../components/AssetCard";
 import "../styles/Favorites.css";
+import { AIChat } from "../components/AIChat.jsx";
 
 const BASE = import.meta.env.VITE_BACKEND_URL;
 
@@ -102,6 +103,7 @@ export function Favorites() {
             <h2>Mis favoritos</h2>
             <p>{favorites.length} activo{favorites.length !== 1 ? "s" : ""} guardado{favorites.length !== 1 ? "s" : ""}</p>
           </div>
+          <AIChat/>
         </header>
 
         <main className="favorites-content">

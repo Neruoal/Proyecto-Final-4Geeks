@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
 import "../styles/Profile.css";
+import { AIChat } from "../components/AIChat";
 
 const BASE = import.meta.env.VITE_BACKEND_URL;
 
@@ -97,7 +98,7 @@ export function Profile() {
         fullName={profile?.full_name ?? ""}
         avatarUrl={profile?.avatar_url ?? ""}
       />
-
+<AIChat/>
       <div className="profile-main">
 
         <header className="profile-topbar">

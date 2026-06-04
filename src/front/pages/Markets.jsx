@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
 import { AssetCard } from "../components/AssetCard";
 import "../styles/Markets.css";
+import { AIChat } from "../components/AIChat.jsx";
 
 const BASE = import.meta.env.VITE_BACKEND_URL;
 
@@ -191,7 +192,7 @@ export function Markets() {
         <header className="markets-topbar">
           <h2>Mercados</h2>
         </header>
-
+  <AIChat/>
         <main className="markets-content">
 
           <div className="markets-filters">
