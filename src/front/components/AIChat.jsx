@@ -83,7 +83,7 @@ function findAssets(text) {
 
 const firstMessage = {
   role: "bot",
-  text: "Hola, dime qué activo quieres revisar y te ayudo.",
+  text: "Hola, soy EconomIA, tu asesor financiero personal. Indícame qué activo quieres analizar y te ayudaré con la información disponible.",
 };
 
 export function AIChat() {
@@ -193,7 +193,7 @@ export function AIChat() {
 
             <div className="ai-chat-header-info">
               <p className="ai-chat-title">Asesor financiero</p>
-              <p className="ai-chat-subtitle">Gemini</p>
+              <p className="ai-chat-subtitle">EconomIA</p>
             </div>
 
             <button className="ai-chat-close" onClick={() => setOpen(false)}>
