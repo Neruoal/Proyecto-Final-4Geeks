@@ -23,7 +23,7 @@ export function Sidebar({ email = "", fullName = "", avatarUrl = "" }) {
 
   const handleLogout = () => {
     localStorage.removeItem("token");
-    navigate("/login");
+    navigate("/");
   };
 
   const initial  = email?.[0]?.toUpperCase() ?? "U";
@@ -34,7 +34,7 @@ export function Sidebar({ email = "", fullName = "", avatarUrl = "" }) {
 
       <Link to="/dashboard" className="sb-brand">
         <div className="sb-brand-mark">
-          <img src="/icon.png" alt="Economos" style={{ width:"20px", height:"20px"}}/>
+          <img src="/public/economos.png" alt="Economos" style={{ width:"20px", height:"20px"}}/>
         </div>
         <p className="sb-brand-name">ECONOMOS</p>
       </Link>
