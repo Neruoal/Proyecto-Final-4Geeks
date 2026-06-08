@@ -373,12 +373,6 @@ export function Dashboard() {
             <h2>{greeting()}, {profile?.full_name?.split(" ")[0] || profile?.email?.split("@")[0] || "Usuario"}</h2>
             <p>Resumen de tu cartera: {today()}</p>
           </div>
-          <div className="topbar-right">
-            <button className="notif-btn" type="button">
-              <span className="notif-symbol">!</span>
-              <div className="notif-dot" />
-            </button>
-          </div>
         </header>
 
         <main className="dash-content">
