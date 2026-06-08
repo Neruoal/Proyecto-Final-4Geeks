@@ -17,7 +17,7 @@ import { Profile } from "./pages/Profile";
 import { News } from "./pages/News";
 import { Markets } from "./pages/Markets";
 import { AIChat } from "./components/AIChat";
-
+import { Landing } from "./pages/Landing";
 
 
 export const router = createBrowserRouter(
@@ -32,9 +32,9 @@ export const router = createBrowserRouter(
           {/* Sin layout */}
           <Route path="/login"    element={<Login />} />
           <Route path="/register" element={<Register />} />
-
+          <Route path="/" element={<Landing />} />
           {/* Con layout */}
-          <Route path="/"          element={<Dashboard />} />
+          <Route path="/dashboard"          element={<Dashboard />} />
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/dashboard" element={<Dashboard />} />
