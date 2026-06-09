@@ -34,7 +34,10 @@ export function Sidebar({ email = "", fullName = "", avatarUrl = "" }) {
 
       <Link to="/dashboard" className="sb-brand">
         <div className="sb-brand-mark">
-          <img src="/public/economos.png" alt="Economos" style={{ width:"20px", height:"20px"}}/>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M2 12L6 7L9.5 10L13 4" stroke="#1e2025" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="13" cy="4" r="1.2" fill="#1e2025" />
+          </svg>
         </div>
         <p className="sb-brand-name">ECONOMOS</p>
       </Link>
