@@ -72,7 +72,8 @@ export function AssetCard({
       try {
         const res  = await fetch(`${BASE}/api/${endpoint}/yf_recommendation?ticker=${ticker}`);
         if (!res.ok) throw new Error("Sin datos");
-        const json = await res.json();
+        const text = await res.text();
+        const json = JSON.parse(text.replace(/:\s*NaN/g, ": null"));
         if (json.error) throw new Error(json.error);
         setData(json);
         setCache(cacheKey, json);
